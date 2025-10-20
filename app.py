@@ -1,0 +1,1842 @@
+from flask import Flask, render_template, request, jsonify, send_file
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime, timedelta
+import os
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from apscheduler.schedulers.background import BackgroundScheduler
+import atexit
+import json
+import hashlib
+import webbrowser
+import threading
+
+# Import configuration from config.py
+try:
+    from config import EMAIL_CONFIG
+    print("✓ Email configuration loaded from config.py")
+except ImportError:
+    print("⚠️ Warning: config.py not found, using default email configuration")
+    EMAIL_CONFIG = {
+        'smtp_server': 'smtp.gmail.com',
+        'smtp_port': 587,
+        'email': 'your-email@gmail.com',
+        'password': 'your-app-password',
+        'recipient': 'recipient@example.com'
+    }
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///diary.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# Database Models
+class DailyOccurrence(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    time = db.Column(db.String(10), nullable=False)
+    flat_number = db.Column(db.String(20), nullable=False)
+    reported_by = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    sent = db.Column(db.Boolean, default=False)
+
+class StaffRota(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False)
+    staff_name = db.Column(db.String(100), nullable=False)
+    shift_start = db.Column(db.String(10))
+    shift_end = db.Column(db.String(10))
+    status = db.Column(db.String(20), default='working')  # working, off, holiday
+    notes = db.Column(db.Text)
+
+class CCTVFault(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    fault_type = db.Column(db.String(50), nullable=False)  # CCTV or Intercom
+    flat_number = db.Column(db.String(20), nullable=False)
+    block_number = db.Column(db.String(20))
+    floor_number = db.Column(db.String(20))
+    location = db.Column(db.String(100))  # Keep for backwards compatibility
+    description = db.Column(db.Text, nullable=False)
+    contact_details = db.Column(db.String(200))
+    additional_notes = db.Column(db.Text)
+    status = db.Column(db.String(20), default='open')  # open, in_progress, closed
+    resolved_date = db.Column(db.DateTime)
+
+class WaterTemperature(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    temperature = db.Column(db.Float, nullable=False)
+    time_recorded = db.Column(db.String(5), nullable=False)  # Format: HH:MM
+
+class EmailLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sent_date = db.Column(db.DateTime, default=datetime.utcnow)
+    recipient = db.Column(db.String(200), nullable=False)
+    subject = db.Column(db.String(200), nullable=False)
+    pdf_path = db.Column(db.String(500), nullable=False)
+
+class ScheduleSettings(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email_time = db.Column(db.String(5), default='18:00')  # Format: HH:MM
+    email_enabled = db.Column(db.Boolean, default=True)
+    recipient_email = db.Column(db.String(500), default='recipient@example.com')  # Support multiple emails
+    # Sender email settings (configurable in Settings tab)
+    sender_email = db.Column(db.String(200), default='')
+    sender_password = db.Column(db.String(200), default='')
+    smtp_server = db.Column(db.String(200), default='smtp.gmail.com')
+    smtp_port = db.Column(db.Integer, default=587)
+    last_updated = db.Column(db.DateTime, default=datetime.utcnow)
+
+class StaffMember(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    color = db.Column(db.String(20), nullable=False)  # Shift 1&2: red, yellow, green, blue | Night Shift: purple, darkred, darkgreen, brownishyellow
+    shift = db.Column(db.Integer, nullable=False)  # 1, 2, or 3 (Night Shift)
+    active = db.Column(db.Boolean, default=True)
+
+class ShiftLeader(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    pin = db.Column(db.String(100), nullable=False)  # Store hashed PIN
+    active = db.Column(db.Boolean, default=True)
+    created_date = db.Column(db.DateTime, default=datetime.utcnow)
+    last_login = db.Column(db.DateTime)
+
+# Initialize scheduler
+scheduler = BackgroundScheduler()
+
+def get_porter_groups():
+    """Get porter groups from database"""
+    staff_members = StaffMember.query.filter_by(active=True).all()
+    
+    # Build porter_groups dictionary
+    porter_groups = {}
+    all_staff_by_shift = {'Shift 1': [], 'Shift 2': [], 'Night Shift': []}
+    
+    for staff in staff_members:
+        color = staff.color
+        shift_key = f'shift{staff.shift}'
+        shift_name = f'Shift {staff.shift}' if staff.shift in [1, 2] else 'Night Shift'
+        
+        if color not in porter_groups:
+            porter_groups[color] = {}
+        porter_groups[color][shift_key] = staff.name
+        
+        all_staff_by_shift[shift_name].append(staff.name)
+    
+    return porter_groups, all_staff_by_shift
+
+def send_daily_report(report_date=None):
+    """Send daily report and clear data"""
+    try:
+        # Check if email is enabled
+        settings = ScheduleSettings.query.first()
+        if not settings or not settings.email_enabled:
+            print("Email sending is disabled")
+            return
+        
+        # Use provided date or default to today
+        if report_date is None:
+            report_date = datetime.now().date()
+        
+        # Get occurrences for the specified date
+        next_day = report_date + timedelta(days=1)
+        occurrences = DailyOccurrence.query.filter(
+            DailyOccurrence.timestamp >= report_date,
+            DailyOccurrence.timestamp < next_day,
+            DailyOccurrence.sent == False
+        ).all()
+        
+        # Generate PDF regardless of whether there are occurrences
+        pdf_path = generate_daily_pdf(occurrences, report_date)
+        
+        # Generate CSV backup for safety
+        csv_path = generate_daily_csv(occurrences, report_date)
+        
+        # Log the email FIRST (before sending) to prevent duplicate sends on retry
+        email_log = EmailLog(
+            recipient=settings.recipient_email,
+            subject=f"Daily Report - {report_date}",
+            pdf_path=pdf_path
+        )
+        db.session.add(email_log)
+        db.session.commit()
+        
+        # Now attempt to send email
+        email_sent = send_email_with_pdf(pdf_path, f"Daily Report - {report_date}", settings.recipient_email)
+        
+        if email_sent:
+            # Mark as sent if there were occurrences and email succeeded
+            if occurrences:
+                for occurrence in occurrences:
+                    occurrence.sent = True
+                db.session.commit()
+            
+            print(f"Daily report sent successfully for {report_date}")
+            print(f"CSV backup saved to: {csv_path}")
+        else:
+            print(f"⚠️ Email failed to send for {report_date}, but PDF/CSV saved locally")
+            print(f"PDF: {pdf_path}")
+            print(f"CSV: {csv_path}")
+        
+        return email_sent
+    except Exception as e:
+        print(f"Error sending daily report: {e}")
+        return False
+
+def generate_daily_pdf(occurrences, report_date=None):
+    """Generate PDF report of daily occurrences"""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    
+    # Use provided date or default to today
+    if report_date is None:
+        report_date = datetime.now().date()
+    
+    # Filename uses report date, with time suffix to avoid overwriting
+    filename = f"daily_report_{report_date.strftime('%Y%m%d')}_{datetime.now().strftime('%H%M%S')}.pdf"
+    filepath = os.path.join('reports', 'PDF', filename)
+    
+    # Create reports/PDF directory if it doesn't exist
+    os.makedirs(os.path.join('reports', 'PDF'), exist_ok=True)
+    
+    doc = SimpleDocTemplate(filepath, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+    
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=16,
+        spaceAfter=30,
+        alignment=1  # Center alignment
+    )
+    story.append(Paragraph(f"Daily Occurrences Report - {report_date.strftime('%B %d, %Y')}", title_style))
+    story.append(Spacer(1, 20))
+    
+    # Add staff schedule section
+    story.append(Paragraph("Staff Schedule", ParagraphStyle(
+        'ScheduleTitle',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=15,
+        textColor=colors.darkblue
+    )))
+    
+    # Get staff schedule from porter rota for the report date
+    today = report_date
+    
+    # Get staff members from database
+    porter_groups, all_staff = get_porter_groups()
+    
+    rotation_pattern = {
+        # Week 1
+        (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
+        (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
+        # Week 2
+        (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
+        (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
+        # Week 3
+        (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
+        (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
+        # Week 4
+        (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
+        (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
+    }
+    
+    # Reference date (start of week 1) - September 29, 2025
+    reference_date = datetime(2025, 9, 29).date()
+    days_diff = (today - reference_date).days
+    week_in_cycle = (days_diff // 7) % 4
+    day_of_week = today.weekday()
+    
+    # Get which color group(s) are off
+    pattern_key = (week_in_cycle, day_of_week)
+    colors_off = rotation_pattern.get(pattern_key, None)
+    
+    # Ensure colors_off is always a list for uniform processing
+    if colors_off and not isinstance(colors_off, list):
+        colors_off = [colors_off]
+    
+    # Build list of staff who are off (only for day shifts 1 & 2)
+    staff_off_names = []
+    if colors_off:
+        for color in colors_off:
+            # Only apply rotation to day shift colors (red, yellow, green, blue)
+            if color in ['red', 'yellow', 'green', 'blue'] and color in porter_groups:
+                if 'shift1' in porter_groups[color]:
+                    staff_off_names.append(porter_groups[color]['shift1'])
+                if 'shift2' in porter_groups[color]:
+                    staff_off_names.append(porter_groups[color]['shift2'])
+    
+    # Night shift rotation pattern (separate 4-week cycle)
+    night_shift_rotation = {
+        # Week 1: Mon-Purple, Tue-Purple, Wed-DarkRed, Thu-DarkGreen, Fri-DarkGreen, Sat-BrownishYellow, Sun-BrownishYellow+Purple
+        (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
+        (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
+        # Week 2: Mon-DarkRed, Tue-DarkRed, Wed-DarkGreen, Thu-BrownishYellow, Fri-BrownishYellow, Sat-Purple, Sun-Purple+DarkRed
+        (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
+        (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
+        # Week 3: Mon-DarkGreen, Tue-DarkGreen, Wed-BrownishYellow, Thu-Purple, Fri-Purple, Sat-DarkRed, Sun-DarkRed+DarkGreen
+        (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
+        (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
+        # Week 4: Mon-BrownishYellow, Tue-BrownishYellow, Wed-Purple, Thu-DarkRed, Fri-DarkRed, Sat-DarkGreen, Sun-DarkGreen+BrownishYellow
+        (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
+        (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
+    }
+    
+    # Get night shift colors off for today
+    night_colors_off = night_shift_rotation.get(pattern_key, None)
+    if night_colors_off and not isinstance(night_colors_off, list):
+        night_colors_off = [night_colors_off]
+    
+    # Add night shift staff who are off to the list
+    if night_colors_off:
+        for color in night_colors_off:
+            if color in porter_groups:
+                if 'shift3' in porter_groups[color]:
+                    staff_off_names.append(porter_groups[color]['shift3'])
+    
+    # Check database for holidays and sick leave for today
+    staff_on_leave = {}
+    leave_records = StaffRota.query.filter_by(date=today).all()
+    for record in leave_records:
+        if record.status in ['holiday', 'sick', 'off']:
+            staff_on_leave[record.staff_name] = record.status.upper()
+    
+    # Create staff schedule in 3-column layout (like the web page)
+    # Build content for each shift box
+    shift1_content = []
+    shift2_content = []
+    night_shift_content = []
+    
+    # Sort staff names to ensure consistent ordering (reverse to match web interface)
+    shift1_staff = sorted(all_staff['Shift 1'], reverse=True)
+    shift2_staff = sorted(all_staff['Shift 2'], reverse=True)
+    night_shift_staff = sorted(all_staff['Night Shift'], reverse=True)
+    
+    for staff_name in shift1_staff:
+        # Check if on leave first (higher priority than rotation)
+        if staff_name in staff_on_leave:
+            status = staff_on_leave[staff_name]
+        else:
+            is_off = staff_name in staff_off_names
+            status = 'OFF' if is_off else 'ON'
+        shift1_content.append(f"{staff_name}: {status}")
+    
+    for staff_name in shift2_staff:
+        # Check if on leave first (higher priority than rotation)
+        if staff_name in staff_on_leave:
+            status = staff_on_leave[staff_name]
+        else:
+            is_off = staff_name in staff_off_names
+            status = 'OFF' if is_off else 'ON'
+        shift2_content.append(f"{staff_name}: {status}")
+    
+    for staff_name in night_shift_staff:
+        # Check if on leave first (higher priority than rotation)
+        if staff_name in staff_on_leave:
+            status = staff_on_leave[staff_name]
+        else:
+            is_off = staff_name in staff_off_names
+            status = 'OFF' if is_off else 'ON'
+        night_shift_content.append(f"{staff_name}: {status}")
+    
+    # Create paragraphs for each box
+    box_style = ParagraphStyle(
+        'BoxContent',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=14,
+        leftIndent=5,
+        rightIndent=5,
+        spaceBefore=3,
+        spaceAfter=3
+    )
+    
+    shift1_text = '<br/>'.join(shift1_content) if shift1_content else 'No staff assigned'
+    shift2_text = '<br/>'.join(shift2_content) if shift2_content else 'No staff assigned'
+    night_shift_text = '<br/>'.join(night_shift_content) if night_shift_content else 'No staff assigned'
+    
+    # Create the 3-column table
+    schedule_data = [
+        [
+            Paragraph('<b>SHIFT 1</b><br/>(7am-2pm / 2pm-10pm)<br/>' + shift1_text, box_style),
+            Paragraph('<b>SHIFT 2</b><br/>(2pm-10pm / 7am-2pm)<br/>' + shift2_text, box_style),
+            Paragraph('<b>NIGHT SHIFT</b><br/>(10pm-7am)<br/>' + night_shift_text, box_style)
+        ]
+    ]
+    
+    schedule_table = Table(schedule_data, colWidths=[2.3*inch, 2.3*inch, 2.3*inch])
+    schedule_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#e0f2f7')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('GRID', (0, 0), (-1, -1), 2, colors.HexColor('#dee2e6')),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10)
+    ]))
+    
+    story.append(schedule_table)
+    story.append(Spacer(1, 30))
+    
+    # Daily Occurrences section
+    story.append(Paragraph("Daily Occurrences", ParagraphStyle(
+        'OccurrencesTitle',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=15,
+        textColor=colors.darkblue
+    )))
+    
+    # Check if there are no occurrences
+    if not occurrences or len(occurrences) == 0:
+        # Add a message indicating no occurrences
+        no_occurrence_style = ParagraphStyle(
+            'NoOccurrenceStyle',
+            parent=styles['Normal'],
+            fontSize=12,
+            leading=16,
+            textColor=colors.darkgreen,
+            alignment=1,  # Center alignment
+            spaceBefore=10,
+            spaceAfter=10
+        )
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("No incidents or occurrences were recorded today.", no_occurrence_style))
+        story.append(Spacer(1, 10))
+    else:
+        # Create table data with proper text wrapping using Paragraph objects
+        from reportlab.lib.styles import ParagraphStyle
+        
+        # Define paragraph style for wrapped text
+        wrap_style = ParagraphStyle(
+            'WrapStyle',
+            parent=styles['Normal'],
+            fontSize=9,
+            leading=11,
+            leftIndent=0,
+            rightIndent=0,
+            spaceBefore=0,
+            spaceAfter=0
+        )
+        
+        # Table data with wrapped text
+        data = [['TIME', 'FLAT', 'BY', 'INCIDENT REPORT']]
+        for occurrence in occurrences:
+            # Create wrapped paragraph for description
+            description_para = Paragraph(occurrence.description, wrap_style)
+            
+            data.append([
+                occurrence.time,
+                occurrence.flat_number,
+                occurrence.reported_by,
+                description_para
+            ])
+        
+        # Create table with proper column widths and text wrapping
+        table = Table(data, colWidths=[0.7*inch, 0.7*inch, 0.9*inch, 4.5*inch], repeatRows=1)
+        table.setStyle(TableStyle([
+            # Header row styling
+            ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            
+            # Data rows styling
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+            ('ALIGN', (0, 1), (2, -1), 'CENTER'),  # Center TIME, FLAT, BY columns
+            ('ALIGN', (3, 1), (3, -1), 'LEFT'),    # Left align INCIDENT REPORT
+            ('FONTNAME', (0, 1), (2, -1), 'Helvetica'),  # Only apply to first 3 columns
+            ('FONTSIZE', (0, 1), (2, -1), 9),      # Only apply to first 3 columns
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 1), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 6)
+        ]))
+        
+        story.append(table)
+    
+    # Add spacing before water temperature section
+    story.append(Spacer(1, 30))
+    
+    # Water Temperature section
+    story.append(Paragraph("Water Temperature Readings", ParagraphStyle(
+        'TempTitle',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=15,
+        textColor=colors.darkblue
+    )))
+    
+    # Get water temperatures for the report date
+    today_start = datetime.combine(report_date, datetime.min.time())
+    today_end = datetime.combine(report_date, datetime.max.time())
+    
+    water_temps = WaterTemperature.query.filter(
+        WaterTemperature.timestamp >= today_start,
+        WaterTemperature.timestamp <= today_end
+    ).order_by(WaterTemperature.time_recorded).all()
+    
+    if water_temps and len(water_temps) > 0:
+        # Format temperatures as comma-separated text: "01:00 [53], 02:00 [57.1], ..."
+        temp_entries = []
+        for temp_reading in water_temps:
+            # Format temperature with appropriate decimal places
+            temp_value = temp_reading.temperature
+            # If it's a whole number, show no decimals; otherwise show as is
+            if temp_value == int(temp_value):
+                temp_str = f"{int(temp_value)}"
+            else:
+                temp_str = f"{temp_value:.1f}".rstrip('0').rstrip('.')
+            
+            temp_entries.append(f"{temp_reading.time_recorded} [{temp_str}]")
+        
+        # Join all entries with commas
+        temp_text = ", ".join(temp_entries)
+        
+        # Create a bordered paragraph with the temperature readings
+        temp_style = ParagraphStyle(
+            'TempReadings',
+            parent=styles['Normal'],
+            fontSize=10,
+            leading=14,
+            leftIndent=10,
+            rightIndent=10,
+            spaceBefore=10,
+            spaceAfter=10,
+            alignment=0  # Left alignment
+        )
+        
+        # Create a table with single cell to create the border effect
+        temp_data = [[Paragraph(temp_text, temp_style)]]
+        temp_table = Table(temp_data, colWidths=[6.5*inch])
+        temp_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('BOX', (0, 0), (-1, -1), 1, colors.black),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10)
+        ]))
+        
+        story.append(temp_table)
+    else:
+        # No temperature readings
+        no_temp_style = ParagraphStyle(
+            'NoTempStyle',
+            parent=styles['Normal'],
+            fontSize=12,
+            leading=16,
+            textColor=colors.gray,
+            alignment=1,
+            spaceBefore=10,
+            spaceAfter=10
+        )
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("No water temperature readings recorded today.", no_temp_style))
+        story.append(Spacer(1, 10))
+    
+    doc.build(story)
+    return filepath
+
+def generate_daily_csv(occurrences, report_date=None):
+    """Generate CSV backup of daily occurrences"""
+    import csv
+    
+    # Use provided date or default to today
+    if report_date is None:
+        report_date = datetime.now().date()
+    
+    # Filename uses report date, with time suffix to avoid overwriting
+    filename = f"daily_report_{report_date.strftime('%Y%m%d')}_{datetime.now().strftime('%H%M%S')}.csv"
+    filepath = os.path.join('reports', 'CSV', filename)
+    
+    # Create reports/CSV directory if it doesn't exist
+    os.makedirs(os.path.join('reports', 'CSV'), exist_ok=True)
+    
+    # Get date and staff schedule info for the report
+    today = report_date
+    porter_groups, all_staff = get_porter_groups()
+    
+    # Calculate staff schedule
+    rotation_pattern = {
+        # Week 1
+        (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
+        (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
+        # Week 2
+        (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
+        (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
+        # Week 3
+        (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
+        (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
+        # Week 4
+        (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
+        (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
+    }
+    
+    reference_date = datetime(2025, 9, 29).date()
+    days_diff = (today - reference_date).days
+    week_in_cycle = (days_diff // 7) % 4
+    day_of_week = today.weekday()
+    
+    pattern_key = (week_in_cycle, day_of_week)
+    colors_off = rotation_pattern.get(pattern_key, None)
+    
+    if colors_off and not isinstance(colors_off, list):
+        colors_off = [colors_off]
+    
+    staff_off_names = []
+    if colors_off:
+        for color in colors_off:
+            # Only apply rotation to day shift colors (red, yellow, green, blue)
+            if color in ['red', 'yellow', 'green', 'blue'] and color in porter_groups:
+                if 'shift1' in porter_groups[color]:
+                    staff_off_names.append(porter_groups[color]['shift1'])
+                if 'shift2' in porter_groups[color]:
+                    staff_off_names.append(porter_groups[color]['shift2'])
+    
+    # Night shift rotation pattern (separate 4-week cycle)
+    night_shift_rotation = {
+        # Week 1: Mon-Purple, Tue-Purple, Wed-DarkRed, Thu-DarkGreen, Fri-DarkGreen, Sat-BrownishYellow, Sun-BrownishYellow+Purple
+        (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
+        (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
+        # Week 2: Mon-DarkRed, Tue-DarkRed, Wed-DarkGreen, Thu-BrownishYellow, Fri-BrownishYellow, Sat-Purple, Sun-Purple+DarkRed
+        (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
+        (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
+        # Week 3: Mon-DarkGreen, Tue-DarkGreen, Wed-BrownishYellow, Thu-Purple, Fri-Purple, Sat-DarkRed, Sun-DarkRed+DarkGreen
+        (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
+        (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
+        # Week 4: Mon-BrownishYellow, Tue-BrownishYellow, Wed-Purple, Thu-DarkRed, Fri-DarkRed, Sat-DarkGreen, Sun-DarkGreen+BrownishYellow
+        (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
+        (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
+    }
+    
+    # Get night shift colors off for today
+    night_colors_off = night_shift_rotation.get(pattern_key, None)
+    if night_colors_off and not isinstance(night_colors_off, list):
+        night_colors_off = [night_colors_off]
+    
+    # Add night shift staff who are off to the list
+    if night_colors_off:
+        for color in night_colors_off:
+            if color in porter_groups:
+                if 'shift3' in porter_groups[color]:
+                    staff_off_names.append(porter_groups[color]['shift3'])
+    
+    # Check database for holidays and sick leave for today
+    staff_on_leave = {}
+    leave_records = StaffRota.query.filter_by(date=today).all()
+    for record in leave_records:
+        if record.status in ['holiday', 'sick', 'off']:
+            staff_on_leave[record.staff_name] = record.status.upper()
+    
+    # Sort staff names to ensure consistent ordering (reverse to match web interface)
+    shift1_staff = sorted(all_staff['Shift 1'], reverse=True)
+    shift2_staff = sorted(all_staff['Shift 2'], reverse=True)
+    night_shift_staff = sorted(all_staff['Night Shift'], reverse=True)
+    
+    # Write CSV file
+    with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        
+        # Header information
+        writer.writerow(['Daily Occurrences Report'])
+        writer.writerow(['Date', today.strftime('%B %d, %Y')])
+        writer.writerow(['Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+        writer.writerow([])
+        
+        # Staff schedule section
+        writer.writerow(['STAFF SCHEDULE'])
+        writer.writerow([])
+        
+        # Shift 1
+        writer.writerow(['SHIFT 1 (7am-2pm / 2pm-10pm)'])
+        for staff_name in shift1_staff:
+            # Check if on leave first (higher priority than rotation)
+            if staff_name in staff_on_leave:
+                status = staff_on_leave[staff_name]
+            else:
+                is_off = staff_name in staff_off_names
+                status = 'OFF' if is_off else 'ON'
+            writer.writerow([staff_name, status])
+        if not shift1_staff:
+            writer.writerow(['No staff assigned', ''])
+        writer.writerow([])
+        
+        # Shift 2
+        writer.writerow(['SHIFT 2 (2pm-10pm / 7am-2pm)'])
+        for staff_name in shift2_staff:
+            # Check if on leave first (higher priority than rotation)
+            if staff_name in staff_on_leave:
+                status = staff_on_leave[staff_name]
+            else:
+                is_off = staff_name in staff_off_names
+                status = 'OFF' if is_off else 'ON'
+            writer.writerow([staff_name, status])
+        if not shift2_staff:
+            writer.writerow(['No staff assigned', ''])
+        writer.writerow([])
+        
+        # Night Shift
+        writer.writerow(['NIGHT SHIFT (10pm-7am)'])
+        for staff_name in night_shift_staff:
+            # Check if on leave first (higher priority than rotation)
+            if staff_name in staff_on_leave:
+                status = staff_on_leave[staff_name]
+            else:
+                is_off = staff_name in staff_off_names
+                status = 'OFF' if is_off else 'ON'
+            writer.writerow([staff_name, status])
+        if not night_shift_staff:
+            writer.writerow(['No staff assigned', ''])
+        writer.writerow([])
+        
+        # Daily occurrences section
+        writer.writerow(['DAILY OCCURRENCES'])
+        writer.writerow([])
+        
+        if not occurrences or len(occurrences) == 0:
+            writer.writerow(['No incidents or occurrences were recorded today.'])
+        else:
+            # Column headers
+            writer.writerow(['TIME', 'FLAT', 'REPORTED BY', 'INCIDENT REPORT'])
+            
+            # Occurrence data
+            for occurrence in occurrences:
+                writer.writerow([
+                    occurrence.time,
+                    occurrence.flat_number,
+                    occurrence.reported_by,
+                    occurrence.description
+                ])
+    
+    return filepath
+
+def send_email_with_pdf(pdf_path, subject, recipient=None):
+    """Send email with PDF attachment - supports multiple recipients"""
+    try:
+        # Get email settings from database
+        settings = ScheduleSettings.query.first()
+        
+        # Use database settings if available, otherwise fallback to config.py
+        if settings and settings.sender_email:
+            sender_email = settings.sender_email
+            sender_password = settings.sender_password
+            smtp_server = settings.smtp_server
+            smtp_port = settings.smtp_port
+        else:
+            # Fallback to config.py for backwards compatibility
+            sender_email = EMAIL_CONFIG['email']
+            sender_password = EMAIL_CONFIG['password']
+            smtp_server = EMAIL_CONFIG['smtp_server']
+            smtp_port = EMAIL_CONFIG['smtp_port']
+        
+        if recipient is None:
+            recipient = EMAIL_CONFIG['recipient']
+        
+        # Parse multiple email addresses (comma or semicolon separated)
+        if isinstance(recipient, str):
+            # Split by comma or semicolon and clean up whitespace
+            recipients = [email.strip() for email in recipient.replace(';', ',').split(',') if email.strip()]
+        else:
+            recipients = recipient
+            
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = ', '.join(recipients)  # Display all recipients in header
+        msg['Subject'] = subject
+        
+        body = f"Please find attached the daily occurrences report for {datetime.now().strftime('%B %d, %Y')}."
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Attach PDF
+        with open(pdf_path, "rb") as f:
+            attach = MIMEApplication(f.read(), _subtype="pdf")
+            attach.add_header('Content-Disposition', 'attachment', filename=os.path.basename(pdf_path))
+            msg.attach(attach)
+        
+        # Send email to all recipients
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        text = msg.as_string()
+        server.sendmail(sender_email, recipients, text)  # Send to list of recipients
+        server.quit()
+        
+        print(f"Email sent successfully from {sender_email} to: {', '.join(recipients)}")
+        return True
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return False
+
+# Routes
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/api/daily-occurrences', methods=['GET', 'POST'])
+def daily_occurrences():
+    if request.method == 'POST':
+        data = request.json
+        occurrence = DailyOccurrence(
+            time=data['time'],
+            flat_number=data['flat_number'],
+            reported_by=data['reported_by'],
+            description=data['description']
+        )
+        db.session.add(occurrence)
+        db.session.commit()
+        return jsonify({'success': True, 'id': occurrence.id})
+    
+    # GET request - return today's occurrences
+    today = datetime.now().date()
+    tomorrow = datetime.combine(today + timedelta(days=1), datetime.min.time())
+    
+    occurrences = DailyOccurrence.query.filter(
+        DailyOccurrence.timestamp >= today,
+        DailyOccurrence.timestamp < tomorrow
+    ).order_by(DailyOccurrence.timestamp.desc()).all()
+    
+    return jsonify([{
+        'id': o.id,
+        'time': o.time,
+        'flat_number': o.flat_number,
+        'reported_by': o.reported_by,
+        'description': o.description,
+        'timestamp': o.timestamp.isoformat()
+    } for o in occurrences])
+
+@app.route('/api/daily-occurrences/<int:occurrence_id>', methods=['DELETE'])
+def delete_daily_occurrence(occurrence_id):
+    occurrence = DailyOccurrence.query.get(occurrence_id)
+    if occurrence:
+        db.session.delete(occurrence)
+        db.session.commit()
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Occurrence not found'}), 404
+
+@app.route('/api/staff-rota', methods=['GET', 'POST'])
+def staff_rota():
+    if request.method == 'POST':
+        data = request.json
+        rota = StaffRota(
+            date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
+            staff_name=data['staff_name'],
+            shift_start=data.get('shift_start'),
+            shift_end=data.get('shift_end'),
+            status=data.get('status', 'working'),
+            notes=data.get('notes')
+        )
+        db.session.add(rota)
+        db.session.commit()
+        return jsonify({'success': True, 'id': rota.id})
+    
+    # GET request
+    start_date = request.args.get('start_date', datetime.now().date().isoformat())
+    end_date = request.args.get('end_date', (datetime.now() + timedelta(days=30)).date().isoformat())
+    
+    rotas = StaffRota.query.filter(
+        StaffRota.date >= start_date,
+        StaffRota.date <= end_date
+    ).order_by(StaffRota.date).all()
+    
+    return jsonify([{
+        'id': r.id,
+        'date': r.date.isoformat(),
+        'staff_name': r.staff_name,
+        'shift_start': r.shift_start,
+        'shift_end': r.shift_end,
+        'status': r.status,
+        'notes': r.notes
+    } for r in rotas])
+
+@app.route('/api/staff-rota/<int:rota_id>', methods=['DELETE'])
+def delete_staff_rota(rota_id):
+    rota = StaffRota.query.get(rota_id)
+    if rota:
+        db.session.delete(rota)
+        db.session.commit()
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Rota entry not found'}), 404
+
+@app.route('/api/staff-rota-range', methods=['POST'])
+def staff_rota_range():
+    """Add leave for a date range (creates one entry per day)"""
+    data = request.json
+    staff_name = data['staff_name']
+    date_from = datetime.strptime(data['date_from'], '%Y-%m-%d').date()
+    date_to = datetime.strptime(data['date_to'], '%Y-%m-%d').date()
+    status = data.get('status', 'holiday')
+    notes = data.get('notes', '')
+    
+    # Validate date range
+    if date_to < date_from:
+        return jsonify({'success': False, 'error': 'To date must be after or equal to from date'}), 400
+    
+    # Create entries for each day in range
+    current_date = date_from
+    days_added = 0
+    
+    while current_date <= date_to:
+        # Check if entry already exists for this date
+        existing = StaffRota.query.filter_by(
+            date=current_date,
+            staff_name=staff_name,
+            status=status
+        ).first()
+        
+        if not existing:
+            rota = StaffRota(
+                date=current_date,
+                staff_name=staff_name,
+                status=status,
+                notes=notes
+            )
+            db.session.add(rota)
+            days_added += 1
+        
+        current_date += timedelta(days=1)
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'days_added': days_added,
+        'message': f'Added {days_added} day(s) of {status}'
+    })
+
+@app.route('/api/porter-rota', methods=['GET'])
+def porter_rota():
+    """Get porter rota schedule based on 4-week rotation pattern"""
+    start_date = request.args.get('start_date', datetime.now().date().isoformat())
+    end_date = request.args.get('end_date', (datetime.now() + timedelta(days=90)).date().isoformat())
+    
+    start = datetime.strptime(start_date, '%Y-%m-%d').date()
+    end = datetime.strptime(end_date, '%Y-%m-%d').date()
+    
+    # Get staff members from database
+    porter_groups, all_staff_by_shift = get_porter_groups()
+    
+    # Shift rotation: Alternating pattern - Weeks 1&3 have Late, Weeks 2&4 have Early for Shift 1
+    # Week 1: Shift 1 = Late (2pm-10pm), Shift 2 = Early (7am-2pm), Night Shift = (10pm-7am)
+    # Week 2: Shift 1 = Early (7am-2pm), Shift 2 = Late (2pm-10pm), Night Shift = (10pm-7am)
+    # Week 3: Shift 1 = Late (2pm-10pm), Shift 2 = Early (7am-2pm), Night Shift = (10pm-7am)
+    # Week 4: Shift 1 = Early (7am-2pm), Shift 2 = Late (2pm-10pm), Night Shift = (10pm-7am)
+    shift_schedule = {
+        1: {'shift1': 'Late (2pm-10pm)', 'shift2': 'Early (7am-2pm)', 'shift3': 'Night (10pm-7am)'},
+        2: {'shift1': 'Early (7am-2pm)', 'shift2': 'Late (2pm-10pm)', 'shift3': 'Night (10pm-7am)'},
+        3: {'shift1': 'Late (2pm-10pm)', 'shift2': 'Early (7am-2pm)', 'shift3': 'Night (10pm-7am)'},
+        4: {'shift1': 'Early (7am-2pm)', 'shift2': 'Late (2pm-10pm)', 'shift3': 'Night (10pm-7am)'}
+    }
+    
+    # 4-week rotation pattern (which color is off on which day)
+    # Week number (0-3), Day of week (0=Monday, 6=Sunday)
+    # Sundays can have multiple colors (as list) - 2 people off per shift
+    rotation_pattern = {
+        # Week 1
+        (0, 0): 'blue',   # Monday
+        (0, 1): 'green',  # Tuesday
+        (0, 2): 'green',  # Wednesday
+        (0, 3): 'yellow', # Thursday
+        (0, 4): 'blue',   # Friday
+        (0, 5): 'red',    # Saturday
+        (0, 6): ['red', 'yellow'],    # Sunday - 2 colors = 4 people
+        # Week 2
+        (1, 0): 'red',
+        (1, 1): 'blue',
+        (1, 2): 'blue',
+        (1, 3): 'green',
+        (1, 4): 'red',
+        (1, 5): 'yellow',
+        (1, 6): ['yellow', 'green'],  # Sunday - 2 colors = 4 people
+        # Week 3
+        (2, 0): 'yellow',
+        (2, 1): 'red',
+        (2, 2): 'red',
+        (2, 3): 'blue',
+        (2, 4): 'yellow',
+        (2, 5): 'green',
+        (2, 6): ['green', 'blue'],    # Sunday - 2 colors = 4 people
+        # Week 4
+        (3, 0): 'green',
+        (3, 1): 'yellow',
+        (3, 2): 'yellow',
+        (3, 3): 'red',
+        (3, 4): 'green',
+        (3, 5): 'blue',
+        (3, 6): ['blue', 'red'],      # Sunday - 2 colors = 4 people
+    }
+    
+    # Reference date (start of week 1) - set this to a known Monday
+    # Week 3 is Oct 13-19, so Week 1 started on Sept 29, 2025
+    reference_date = datetime(2025, 9, 29).date()  # Monday of Week 1
+    
+    schedule = []
+    current = start
+    while current <= end:
+        # Calculate which week in the 4-week cycle
+        days_diff = (current - reference_date).days
+        week_in_cycle = (days_diff // 7) % 4
+        day_of_week = current.weekday()  # 0=Monday, 6=Sunday
+        
+        week_number = week_in_cycle + 1
+        
+        # Get which color group(s) are off
+        pattern_key = (week_in_cycle, day_of_week)
+        colors_off = rotation_pattern.get(pattern_key, None)
+        
+        # Ensure colors_off is always a list for uniform processing
+        if colors_off and not isinstance(colors_off, list):
+            colors_off = [colors_off]
+        
+        # Build staff off list with shift information
+        staff_off_list = []
+        
+        # Day shifts (1 & 2)
+        if colors_off:
+            for color in colors_off:
+                # Only apply rotation to day shift colors (red, yellow, green, blue)
+                if color in ['red', 'yellow', 'green', 'blue'] and color in porter_groups:
+                    if 'shift1' in porter_groups[color]:
+                        staff_off_list.append({
+                            'name': porter_groups[color]['shift1'],
+                            'shift': 1,
+                            'color': color
+                        })
+                    if 'shift2' in porter_groups[color]:
+                        staff_off_list.append({
+                            'name': porter_groups[color]['shift2'],
+                            'shift': 2,
+                            'color': color
+                        })
+        
+        # Night shift (shift 3) rotation pattern
+        night_rotation = {
+            # Week 1: Mon-Purple, Tue-Purple, Wed-DarkRed, Thu-DarkGreen, Fri-DarkGreen, Sat-BrownishYellow, Sun-BrownishYellow+Purple
+            (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
+            (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
+            # Week 2: Mon-DarkRed, Tue-DarkRed, Wed-DarkGreen, Thu-BrownishYellow, Fri-BrownishYellow, Sat-Purple, Sun-Purple+DarkRed
+            (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
+            (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
+            # Week 3: Mon-DarkGreen, Tue-DarkGreen, Wed-BrownishYellow, Thu-Purple, Fri-Purple, Sat-DarkRed, Sun-DarkRed+DarkGreen
+            (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
+            (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
+            # Week 4: Mon-BrownishYellow, Tue-BrownishYellow, Wed-Purple, Thu-DarkRed, Fri-DarkRed, Sat-DarkGreen, Sun-DarkGreen+BrownishYellow
+            (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
+            (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
+        }
+        
+        # Get night shift colors off
+        night_pattern_key = (week_in_cycle, day_of_week)
+        night_colors_off = night_rotation.get(night_pattern_key, None)
+        if night_colors_off and not isinstance(night_colors_off, list):
+            night_colors_off = [night_colors_off]
+        
+        # Add night shift staff who are off
+        if night_colors_off:
+            for color in night_colors_off:
+                if color in porter_groups:
+                    if 'shift3' in porter_groups[color]:
+                        staff_off_list.append({
+                            'name': porter_groups[color]['shift3'],
+                            'shift': 3,
+                            'color': color
+                        })
+        
+        # For display purposes, join colors if multiple
+        color_off_display = ', '.join(colors_off) if colors_off else None
+        
+        # Get shift times for this week
+        shift_times = shift_schedule.get(week_number, {})
+        
+        schedule.append({
+            'date': current.isoformat(),
+            'day_name': current.strftime('%A'),
+            'week_in_cycle': week_number,
+            'color_off': color_off_display,
+            'staff_off': staff_off_list,
+            'shift1_time': shift_times.get('shift1', ''),
+            'shift2_time': shift_times.get('shift2', ''),
+            'shift3_time': shift_times.get('shift3', ''),
+            'is_today': current == datetime.now().date()
+        })
+        
+        current += timedelta(days=1)
+    
+    return jsonify(schedule)
+
+@app.route('/api/cctv-faults', methods=['GET', 'POST'])
+def cctv_faults():
+    if request.method == 'POST':
+        data = request.json
+        # Build location string from components for backwards compatibility
+        location_parts = []
+        if data.get('flat_number'):
+            location_parts.append(f"Flat {data['flat_number']}")
+        if data.get('block_number'):
+            location_parts.append(f"Block {data['block_number']}")
+        if data.get('floor_number'):
+            location_parts.append(f"Floor {data['floor_number']}")
+        location_string = ' | '.join(location_parts) if location_parts else data.get('location', '')
+        
+        fault = CCTVFault(
+            fault_type=data['fault_type'],
+            flat_number=data.get('flat_number', ''),
+            block_number=data.get('block_number', ''),
+            floor_number=data.get('floor_number', ''),
+            location=location_string,
+            description=data['description'],
+            contact_details=data.get('contact_details', ''),
+            additional_notes=data.get('additional_notes', ''),
+            status=data.get('status', 'open')
+        )
+        db.session.add(fault)
+        db.session.commit()
+        return jsonify({'success': True, 'id': fault.id})
+    
+    # GET request
+    faults = CCTVFault.query.order_by(CCTVFault.timestamp.desc()).all()
+    return jsonify([{
+        'id': f.id,
+        'timestamp': f.timestamp.isoformat(),
+        'fault_type': f.fault_type,
+        'flat_number': f.flat_number,
+        'block_number': f.block_number,
+        'floor_number': f.floor_number,
+        'location': f.location,
+        'description': f.description,
+        'contact_details': f.contact_details,
+        'additional_notes': f.additional_notes,
+        'status': f.status,
+        'resolved_date': f.resolved_date.isoformat() if f.resolved_date else None
+    } for f in faults])
+
+@app.route('/api/water-temperature', methods=['GET', 'POST'])
+def water_temperature():
+    if request.method == 'POST':
+        data = request.json
+        # Validate temperature input
+        if not data.get('temperature') or data['temperature'] == '':
+            return jsonify({'success': False, 'error': 'Temperature is required'}), 400
+        
+        try:
+            temperature_value = float(data['temperature'])
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': 'Invalid temperature value'}), 400
+        
+        temp = WaterTemperature(
+            temperature=temperature_value,
+            time_recorded=data['time']
+        )
+        db.session.add(temp)
+        db.session.commit()
+        return jsonify({'success': True, 'id': temp.id})
+    
+    # GET request with optional date range parameters
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
+    
+    if date_from and date_to:
+        # Custom date range
+        try:
+            start_date = datetime.strptime(date_from, '%Y-%m-%d').date()
+            end_date = datetime.strptime(date_to, '%Y-%m-%d').date()
+            
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            end_datetime = datetime.combine(end_date, datetime.max.time())
+            
+            temps = WaterTemperature.query.filter(
+                WaterTemperature.timestamp >= start_datetime,
+                WaterTemperature.timestamp <= end_datetime
+            ).order_by(WaterTemperature.timestamp.desc()).all()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid date format'}), 400
+    else:
+        # Default: return last 24 hours
+        since = datetime.now() - timedelta(hours=24)
+        temps = WaterTemperature.query.filter(
+            WaterTemperature.timestamp >= since
+        ).order_by(WaterTemperature.timestamp.desc()).all()
+    
+    return jsonify([{
+        'id': t.id,
+        'timestamp': t.timestamp.isoformat(),
+        'temperature': t.temperature,
+        'time_recorded': t.time_recorded
+    } for t in temps])
+
+@app.route('/api/update-fault-status', methods=['POST'])
+def update_fault_status():
+    data = request.json
+    fault = CCTVFault.query.get(data['id'])
+    if fault:
+        fault.status = data['status']
+        if data['status'] == 'closed':
+            fault.resolved_date = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'success': True})
+    return jsonify({'success': False})
+
+@app.route('/api/test-export', methods=['POST'])
+def test_export():
+    """Test function to export PDF and CSV without sending email"""
+    try:
+        # Get today's occurrences
+        today = datetime.now().date()
+        next_day = today + timedelta(days=1)
+        occurrences = DailyOccurrence.query.filter(
+            DailyOccurrence.timestamp >= today,
+            DailyOccurrence.timestamp < next_day,
+            DailyOccurrence.sent == False
+        ).all()
+        
+        # Generate PDF regardless of whether there are occurrences
+        pdf_path = generate_daily_pdf(occurrences, today)
+        
+        # Generate CSV backup for safety
+        csv_path = generate_daily_csv(occurrences, today)
+        
+        if not occurrences or len(occurrences) == 0:
+            return jsonify({
+                'success': True, 
+                'message': f'Reports exported successfully:\nPDF: {pdf_path}\nCSV: {csv_path}\n(No occurrences recorded)',
+                'count': 0
+            })
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Reports exported successfully:\nPDF: {pdf_path}\nCSV: {csv_path}',
+            'count': len(occurrences)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/test-clear', methods=['POST'])
+def test_clear():
+    """Test function to clear today's diary entries"""
+    try:
+        # Get today's occurrences
+        today = datetime.now().date()
+        occurrences = DailyOccurrence.query.filter(
+            DailyOccurrence.timestamp >= today
+        ).all()
+        
+        count = len(occurrences)
+        
+        # Delete all today's occurrences
+        for occurrence in occurrences:
+            db.session.delete(occurrence)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'count': count,
+            'message': f'Cleared {count} diary entries'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+def log_settings_access(staff_name, action, success, ip_address=None):
+    """Log all settings access attempts to a file"""
+    try:
+        log_dir = 'logs'
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, 'settings_access.log')
+        
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        status = 'SUCCESS' if success else 'FAILED'
+        ip_info = f" from {ip_address}" if ip_address else ""
+        
+        log_entry = f"[{timestamp}] {status} - {staff_name} - {action}{ip_info}\n"
+        
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
+        
+        print(f"Settings access logged: {log_entry.strip()}")
+    except Exception as e:
+        print(f"Error logging settings access: {e}")
+
+@app.route('/api/verify-settings-pin', methods=['POST'])
+def verify_settings_pin():
+    """Verify PIN for settings access - checks all shift leaders"""
+    try:
+        data = request.json
+        pin = data.get('pin')
+        
+        if not pin:
+            return jsonify({'success': False, 'error': 'PIN required'})
+        
+        # Hash the entered PIN
+        pin_hash = hashlib.sha256(pin.encode()).hexdigest()
+        
+        # Check all active shift leaders for matching PIN
+        all_leaders = ShiftLeader.query.filter_by(active=True).all()
+        
+        for shift_leader in all_leaders:
+            if shift_leader.pin == pin_hash:
+                # Success - found matching PIN
+                shift_leader.last_login = datetime.utcnow()
+                db.session.commit()
+                
+                log_settings_access(shift_leader.name, 'Settings Access Granted', True, request.remote_addr)
+                return jsonify({
+                    'success': True,
+                    'name': shift_leader.name
+                })
+        
+        # No matching PIN found
+        log_settings_access('Unknown User', 'Settings Access Attempt - Invalid PIN', False, request.remote_addr)
+        return jsonify({'success': False, 'error': 'Invalid PIN'})
+        
+    except Exception as e:
+        print(f"Error verifying settings PIN: {e}")
+        log_settings_access('Unknown', f'Settings Access Error: {str(e)}', False, request.remote_addr)
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/settings-access-logs', methods=['GET'])
+def get_settings_access_logs():
+    """Get recent settings access logs"""
+    try:
+        log_file = os.path.join('logs', 'settings_access.log')
+        
+        if not os.path.exists(log_file):
+            return jsonify({'logs': [], 'message': 'No access logs yet'})
+        
+        # Read last 50 lines from log file
+        with open(log_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        # Get last 50 lines (most recent)
+        recent_logs = lines[-50:] if len(lines) > 50 else lines
+        recent_logs.reverse()  # Show newest first
+        
+        return jsonify({
+            'logs': [line.strip() for line in recent_logs],
+            'total_count': len(lines)
+        })
+        
+    except Exception as e:
+        print(f"Error reading access logs: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/schedule-settings', methods=['GET', 'POST'])
+def schedule_settings():
+    if request.method == 'POST':
+        data = request.json
+        settings = ScheduleSettings.query.first()
+        
+        if not settings:
+            settings = ScheduleSettings()
+            db.session.add(settings)
+        
+        settings.email_time = data['email_time']
+        settings.email_enabled = data['email_enabled']
+        settings.recipient_email = data['recipient_email']
+        
+        # Update sender email settings if provided
+        if 'sender_email' in data:
+            settings.sender_email = data['sender_email']
+        if 'sender_password' in data:
+            settings.sender_password = data['sender_password']
+        if 'smtp_server' in data:
+            settings.smtp_server = data['smtp_server']
+        if 'smtp_port' in data:
+            settings.smtp_port = int(data['smtp_port'])
+            
+        settings.last_updated = datetime.utcnow()
+        
+        db.session.commit()
+        
+        # Update the scheduler
+        update_scheduler()
+        
+        # Log the settings change
+        staff_name = data.get('staff_name', 'Unknown')
+        log_settings_access(staff_name, 'Settings Modified', True, request.remote_addr)
+        
+        return jsonify({'success': True})
+    
+    # GET request
+    settings = ScheduleSettings.query.first()
+    if not settings:
+        # Create default settings with values from config.py
+        settings = ScheduleSettings(
+            sender_email=EMAIL_CONFIG.get('email', ''),
+            sender_password=EMAIL_CONFIG.get('password', ''),
+            smtp_server=EMAIL_CONFIG.get('smtp_server', 'smtp.gmail.com'),
+            smtp_port=EMAIL_CONFIG.get('smtp_port', 587)
+        )
+        db.session.add(settings)
+        db.session.commit()
+    
+    return jsonify({
+        'email_time': settings.email_time,
+        'email_enabled': settings.email_enabled,
+        'recipient_email': settings.recipient_email,
+        'sender_email': settings.sender_email or '',
+        'sender_password': settings.sender_password or '',
+        'smtp_server': settings.smtp_server or 'smtp.gmail.com',
+        'smtp_port': settings.smtp_port or 587,
+        'last_updated': settings.last_updated.isoformat()
+    })
+
+@app.route('/api/email-logs', methods=['GET'])
+def email_logs():
+    """Get email history/logs"""
+    # Get last 30 days of email logs
+    thirty_days_ago = datetime.now() - timedelta(days=30)
+    logs = EmailLog.query.filter(
+        EmailLog.sent_date >= thirty_days_ago
+    ).order_by(EmailLog.sent_date.desc()).all()
+    
+    return jsonify([{
+        'id': log.id,
+        'sent_date': log.sent_date.isoformat(),
+        'recipient': log.recipient,
+        'subject': log.subject,
+        'pdf_path': log.pdf_path
+    } for log in logs])
+
+@app.route('/api/print-pdf', methods=['POST'])
+def print_pdf():
+    """Print a PDF to the default printer"""
+    try:
+        data = request.json
+        pdf_path = data.get('pdf_path')
+        
+        if not pdf_path:
+            return jsonify({'success': False, 'error': 'PDF path required'})
+        
+        # Check if file exists
+        if not os.path.exists(pdf_path):
+            return jsonify({'success': False, 'error': 'PDF file not found'})
+        
+        # Print using Windows default PDF viewer
+        import subprocess
+        
+        # Get absolute path
+        abs_path = os.path.abspath(pdf_path)
+        
+        # Use Windows shell to print (opens in default PDF viewer and prints)
+        # /p parameter tells Windows to print the file
+        subprocess.Popen(['start', '/wait', '', '/p', abs_path], shell=True)
+        
+        print(f"Sent to printer: {abs_path}")
+        
+        # Log the print action
+        staff_name = data.get('staff_name', 'Unknown')
+        log_settings_access(staff_name, f'Printed PDF: {os.path.basename(pdf_path)}', True, request.remote_addr)
+        
+        return jsonify({
+            'success': True,
+            'message': 'PDF sent to printer',
+            'file': os.path.basename(pdf_path)
+        })
+        
+    except Exception as e:
+        print(f"Error printing PDF: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/staff-members', methods=['GET', 'POST'])
+def staff_members():
+    if request.method == 'POST':
+        data = request.json
+        staff = StaffMember(
+            name=data['name'],
+            color=data['color'],
+            shift=data['shift'],
+            active=data.get('active', True)
+        )
+        db.session.add(staff)
+        db.session.commit()
+        return jsonify({'success': True, 'id': staff.id})
+    
+    # GET request - return all active staff members
+    staff_list = StaffMember.query.filter_by(active=True).order_by(StaffMember.shift, StaffMember.color).all()
+    return jsonify([{
+        'id': s.id,
+        'name': s.name,
+        'color': s.color,
+        'shift': s.shift,
+        'active': s.active
+    } for s in staff_list])
+
+@app.route('/api/staff-members/<int:staff_id>', methods=['PUT', 'DELETE'])
+def staff_member(staff_id):
+    staff = StaffMember.query.get(staff_id)
+    if not staff:
+        return jsonify({'success': False, 'error': 'Staff member not found'}), 404
+    
+    if request.method == 'PUT':
+        data = request.json
+        staff.name = data.get('name', staff.name)
+        staff.color = data.get('color', staff.color)
+        staff.shift = data.get('shift', staff.shift)
+        staff.active = data.get('active', staff.active)
+        db.session.commit()
+        return jsonify({'success': True})
+    
+    elif request.method == 'DELETE':
+        # Soft delete - just mark as inactive
+        staff.active = False
+        db.session.commit()
+        return jsonify({'success': True})
+
+@app.route('/api/verify-pin', methods=['POST'])
+def verify_pin():
+    """Verify shift leader PIN (PIN only, no name required)"""
+    data = request.json
+    pin = data.get('pin', '').strip()
+    
+    if not pin:
+        return jsonify({'success': False, 'error': 'PIN is required'}), 400
+    
+    # Hash the provided PIN
+    hashed_pin = hashlib.sha256(pin.encode()).hexdigest()
+    
+    # Find shift leader by PIN hash
+    leader = ShiftLeader.query.filter(
+        ShiftLeader.pin == hashed_pin,
+        ShiftLeader.active == True
+    ).first()
+    
+    if not leader:
+        return jsonify({'success': False, 'error': 'Invalid PIN'}), 401
+    
+    # Update last login time
+    leader.last_login = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'leader': {
+            'id': leader.id,
+            'name': leader.name
+        }
+    })
+
+@app.route('/api/shift-leaders', methods=['GET'])
+def get_shift_leaders():
+    """Get list of active shift leaders (names only, no PINs)"""
+    leaders = ShiftLeader.query.filter_by(active=True).order_by(ShiftLeader.name).all()
+    return jsonify([{
+        'id': leader.id,
+        'name': leader.name
+    } for leader in leaders])
+
+@app.route('/api/change-pin', methods=['POST'])
+def change_pin():
+    """Change shift leader PIN"""
+    data = request.json
+    name = data.get('name', '').strip()
+    old_pin = data.get('old_pin', '').strip()
+    new_pin = data.get('new_pin', '').strip()
+    
+    if not name or not old_pin or not new_pin:
+        return jsonify({'success': False, 'error': 'All fields are required'}), 400
+    
+    if len(new_pin) < 4:
+        return jsonify({'success': False, 'error': 'PIN must be at least 4 digits'}), 400
+    
+    # Find shift leader by name
+    leader = ShiftLeader.query.filter(
+        db.func.lower(ShiftLeader.name) == name.lower(),
+        ShiftLeader.active == True
+    ).first()
+    
+    if not leader:
+        return jsonify({'success': False, 'error': 'Shift leader not found'}), 401
+    
+    # Verify old PIN
+    hashed_old_pin = hashlib.sha256(old_pin.encode()).hexdigest()
+    if leader.pin != hashed_old_pin:
+        return jsonify({'success': False, 'error': 'Current PIN is incorrect'}), 401
+    
+    # Update to new PIN
+    leader.pin = hashlib.sha256(new_pin.encode()).hexdigest()
+    db.session.commit()
+    
+    return jsonify({'success': True, 'message': 'PIN changed successfully'})
+
+def initialize_shift_leaders():
+    """Initialize shift leaders with default PINs (default: 1234)"""
+    try:
+        shift_leader_names = ['Ricardo', 'Arpad', 'Carlos', 'Brian', 'Kojo', 'Peter', 'Konrad']
+        default_pin = '1234'
+        hashed_default_pin = hashlib.sha256(default_pin.encode()).hexdigest()
+        
+        added_count = 0
+        for name in shift_leader_names:
+            # Check if leader already exists
+            existing = ShiftLeader.query.filter(
+                db.func.lower(ShiftLeader.name) == name.lower()
+            ).first()
+            
+            if not existing:
+                leader = ShiftLeader(
+                    name=name,
+                    pin=hashed_default_pin,
+                    active=True
+                )
+                db.session.add(leader)
+                added_count += 1
+                print(f"✓ Added shift leader: {name} (default PIN: {default_pin})")
+        
+        if added_count > 0:
+            db.session.commit()
+            print(f"\n{'='*50}")
+            print(f"IMPORTANT: {added_count} shift leader(s) created with default PIN: {default_pin}")
+            print(f"Please change PINs immediately for security!")
+            print(f"{'='*50}\n")
+        else:
+            print("All shift leaders already exist in database.")
+            
+    except Exception as e:
+        print(f"Error initializing shift leaders: {e}")
+        db.session.rollback()
+
+def check_missed_reports():
+    """Check for missed daily reports and send them on startup"""
+    try:
+        settings = ScheduleSettings.query.first()
+        if not settings or not settings.email_enabled:
+            print("Email not enabled, skipping missed report check")
+            return
+        
+        # Check the last 7 days for missed reports
+        today = datetime.now().date()
+        
+        for days_ago in range(1, 8):  # Check last 7 days
+            check_date = today - timedelta(days=days_ago)
+            
+            # Check if report was already sent for this date (check by subject, not send date)
+            expected_subject = f"Daily Report - {check_date}"
+            existing_log = EmailLog.query.filter(
+                EmailLog.subject == expected_subject
+            ).first()
+            
+            if existing_log:
+                # Report was already sent for this date
+                continue
+            
+            # Check if there are any unsent occurrences for this date
+            next_day = check_date + timedelta(days=1)
+            unsent_occurrences = DailyOccurrence.query.filter(
+                DailyOccurrence.timestamp >= check_date,
+                DailyOccurrence.timestamp < next_day,
+                DailyOccurrence.sent == False
+            ).count()
+            
+            # Check if there are water temperatures for this date (even if no occurrences)
+            temp_start = datetime.combine(check_date, datetime.min.time())
+            temp_end = datetime.combine(check_date, datetime.max.time())
+            water_temps = WaterTemperature.query.filter(
+                WaterTemperature.timestamp >= temp_start,
+                WaterTemperature.timestamp <= temp_end
+            ).count()
+            
+            # If there's data (occurrences or water temps) and no email was sent, send it now
+            if unsent_occurrences > 0 or water_temps > 0:
+                print(f"⚠️ MISSED REPORT DETECTED for {check_date}")
+                print(f"   - Unsent occurrences: {unsent_occurrences}")
+                print(f"   - Water temperature readings: {water_temps}")
+                print(f"   - Sending report now...")
+                
+                success = send_daily_report(check_date)
+                if success:
+                    print(f"✓ Missed report for {check_date} sent successfully!")
+                else:
+                    print(f"✗ Failed to send missed report for {check_date}")
+        
+        print("Missed report check completed")
+        
+    except Exception as e:
+        print(f"Error checking for missed reports: {e}")
+
+def update_scheduler():
+    """Update the scheduler with new time settings"""
+    try:
+        # Remove existing job
+        scheduler.remove_job('daily_report')
+        
+        # Get new settings
+        settings = ScheduleSettings.query.first()
+        if settings and settings.email_enabled:
+            # Parse time
+            hour, minute = map(int, settings.email_time.split(':'))
+            
+            # Add new job
+            scheduler.add_job(
+                func=send_daily_report,
+                trigger="cron",
+                hour=hour,
+                minute=minute,
+                id='daily_report'
+            )
+            print(f"Scheduler updated to send emails at {settings.email_time}")
+    except Exception as e:
+        print(f"Error updating scheduler: {e}")
+
+def migrate_database():
+    """Migrate database to handle schema changes safely"""
+    from sqlalchemy import text, inspect
+    
+    try:
+        # Create inspector to check table structure
+        inspector = inspect(db.engine)
+        
+        # Check if water_temperature table has the old structure
+        if 'water_temperature' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('water_temperature')]
+            
+            if 'notes' in columns and 'time_recorded' not in columns:
+                print("Migrating water_temperature table...")
+                with db.engine.connect() as conn:
+                    # Create new table with correct structure
+                    conn.execute(text("""
+                        CREATE TABLE water_temperature_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            temperature FLOAT NOT NULL,
+                            time_recorded VARCHAR(5) NOT NULL
+                        )
+                    """))
+                    
+                    # Copy data from old table (if any)
+                    try:
+                        conn.execute(text("""
+                            INSERT INTO water_temperature_new (id, timestamp, temperature, time_recorded)
+                            SELECT id, timestamp, temperature, '00:00' FROM water_temperature
+                        """))
+                    except:
+                        pass  # No data to migrate
+                    
+                    # Drop old table and rename new one
+                    conn.execute(text("DROP TABLE water_temperature"))
+                    conn.execute(text("ALTER TABLE water_temperature_new RENAME TO water_temperature"))
+                    conn.commit()
+                print("✓ water_temperature table migrated successfully!")
+        
+        # Check if schedule_settings table needs new sender email columns
+        if 'schedule_settings' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('schedule_settings')]
+            
+            if 'sender_email' not in columns:
+                print("Adding sender email configuration columns to schedule_settings...")
+                with db.engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE schedule_settings ADD COLUMN sender_email VARCHAR(200) DEFAULT ''"))
+                    conn.execute(text("ALTER TABLE schedule_settings ADD COLUMN sender_password VARCHAR(200) DEFAULT ''"))
+                    conn.execute(text("ALTER TABLE schedule_settings ADD COLUMN smtp_server VARCHAR(200) DEFAULT 'smtp.gmail.com'"))
+                    conn.execute(text("ALTER TABLE schedule_settings ADD COLUMN smtp_port INTEGER DEFAULT 587"))
+                    conn.commit()
+                print("✓ Sender email columns added successfully!")
+        
+        # Check if cctv_fault table needs new detailed fields
+        if 'cctv_fault' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('cctv_fault')]
+            
+            if 'flat_number' not in columns:
+                print("Adding detailed fields to cctv_fault table...")
+                with db.engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE cctv_fault ADD COLUMN flat_number VARCHAR(20) DEFAULT ''"))
+                    conn.execute(text("ALTER TABLE cctv_fault ADD COLUMN block_number VARCHAR(20) DEFAULT ''"))
+                    conn.execute(text("ALTER TABLE cctv_fault ADD COLUMN floor_number VARCHAR(20) DEFAULT ''"))
+                    conn.execute(text("ALTER TABLE cctv_fault ADD COLUMN contact_details VARCHAR(200) DEFAULT ''"))
+                    conn.execute(text("ALTER TABLE cctv_fault ADD COLUMN additional_notes TEXT DEFAULT ''"))
+                    conn.commit()
+                print("✓ CCTV/Intercom fault detailed fields added successfully!")
+        
+        # Create all tables if they don't exist
+        db.create_all()
+        print("✓ Tables created/verified successfully!")
+        
+    except Exception as e:
+        print(f"Migration error: {e}")
+        # Only create tables if they don't exist - NEVER drop existing data
+        try:
+            db.create_all()
+            print("Tables created/verified successfully!")
+        except Exception as create_error:
+            print(f"Error creating tables: {create_error}")
+
+if __name__ == '__main__':
+    with app.app_context():
+        # Migrate database if needed
+        migrate_database()
+        
+        # Initialize shift leaders
+        print("=" * 50)
+        print("INITIALIZING SHIFT LEADERS...")
+        print("=" * 50)
+        initialize_shift_leaders()
+        print("=" * 50)
+        
+        # Initialize scheduler with default settings
+        settings = ScheduleSettings.query.first()
+        if not settings:
+            settings = ScheduleSettings()
+            db.session.add(settings)
+            db.session.commit()
+        
+        # Check for missed reports on startup (last 7 days)
+        print("=" * 50)
+        print("CHECKING FOR MISSED REPORTS...")
+        print("=" * 50)
+        check_missed_reports()
+        print("=" * 50)
+        
+        # Schedule daily report using settings
+        if settings.email_enabled:
+            hour, minute = map(int, settings.email_time.split(':'))
+            scheduler.add_job(
+                func=send_daily_report,
+                trigger="cron",
+                hour=hour,
+                minute=minute,
+                id='daily_report'
+            )
+        scheduler.start()
+        
+        # Shut down the scheduler when exiting the app
+        atexit.register(lambda: scheduler.shutdown())
+    
+    # Auto-open browser after server starts
+    def open_browser():
+        """Wait for server to start, then open default browser"""
+        import time
+        time.sleep(1.5)  # Give Flask time to start
+        webbrowser.open('http://127.0.0.1:5000')
+        print("✓ Browser opened automatically")
+    
+    # Start browser in background thread
+    threading.Thread(target=open_browser, daemon=True).start()
+    
+    app.run(debug=False, host='0.0.0.0', port=5000)
