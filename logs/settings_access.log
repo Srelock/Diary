@@ -1,0 +1,14 @@
+[2025-10-19 21:24:34] SUCCESS - Arpad - Settings Access Granted from 127.0.0.1
+[2025-10-19 21:29:04] SUCCESS - Arpad - Settings Access Granted from 127.0.0.1
+[2025-10-19 21:30:46] SUCCESS - Arpad - Settings Access Granted from 127.0.0.1
+[2025-10-19 21:48:22] SUCCESS - Arpad - Settings Access Granted from 192.168.1.10
+[2025-10-19 21:59:53] SUCCESS - Arpad - Settings Modified from 127.0.0.1
+[2025-10-19 22:00:21] SUCCESS - Arpad - Settings Modified from 127.0.0.1
+[2025-10-19 22:03:28] SUCCESS - Arpad - Settings Access Granted from 127.0.0.1
+[2025-10-19 22:04:07] FAILED - Unknown User - Settings Access Attempt - Invalid PIN from 127.0.0.1
+[2025-10-19 22:04:10] SUCCESS - Arpad - Settings Access Granted from 127.0.0.1
+[2025-10-19 22:05:04] SUCCESS - Arpad - Settings Access Granted from 192.168.1.10
+[2025-10-19 22:05:23] SUCCESS - Arpad - Printed PDF: daily_report_20251018_201941.pdf from 192.168.1.10
+[2025-10-20 08:00:12] SUCCESS - Ricardo - Settings Access Granted from 127.0.0.1
+[2025-10-20 08:02:57] SUCCESS - Carlos - Settings Access Granted from 127.0.0.1
+[2025-10-20 09:24:39] SUCCESS - Arpad - Settings Access Granted from 192.168.1.239
