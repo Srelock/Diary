@@ -1196,6 +1196,11 @@
             box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
         }
         
+        /* Hide print table on screen, only show when printing */
+        .print-table-container {
+            display: none;
+        }
+        
         /* Print Styles */
         @media print {
             body {
@@ -1204,9 +1209,14 @@
                 color: black;
             }
             
+            /* Hide everything on screen during print */
             .container {
-                box-shadow: none;
-                max-width: 100%;
+                display: none !important;
+            }
+            
+            /* Show only the print container */
+            #faultPrintContainer {
+                display: block !important;
             }
             
             .header,
@@ -1231,12 +1241,93 @@
                 box-shadow: none;
                 border-radius: 0;
                 background: white;
+                max-height: none !important;
+                overflow: visible !important;
             }
             
             .fault-list {
-                max-height: none;
+                max-height: none !important;
                 padding: 0;
                 background: white;
+                overflow: visible !important;
+                height: auto !important;
+            }
+            
+            /* Hide card-based layout when printing */
+            .fault-list .fault-item {
+                display: none !important;
+            }
+            
+            .fault-search-bar,
+            .fault-empty-state {
+                display: none !important;
+            }
+            
+            /* Show table layout only when printing */
+            .print-table-container {
+                display: block !important;
+            }
+            
+            .fault-print-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+                font-size: 10pt;
+                page-break-inside: auto;
+                display: table !important;
+                max-height: none !important;
+                overflow: visible !important;
+            }
+            
+            .fault-print-table thead {
+                background: #2c3e50;
+                color: white;
+                display: table-header-group !important;
+            }
+            
+            .fault-print-table tbody {
+                display: table-row-group !important;
+            }
+            
+            .fault-print-table th {
+                border: 1px solid #000;
+                padding: 8px 6px;
+                text-align: left;
+                font-weight: bold;
+                font-size: 9pt;
+                display: table-cell !important;
+            }
+            
+            .fault-print-table td {
+                border: 1px solid #666;
+                padding: 6px 5px;
+                text-align: left;
+                font-size: 9pt;
+                vertical-align: top;
+                display: table-cell !important;
+            }
+            
+            .fault-print-table tr {
+                page-break-inside: avoid;
+                display: table-row !important;
+            }
+            
+            .fault-print-table tbody tr:nth-child(even) {
+                background-color: #f9f9f9;
+            }
+            
+            .print-title {
+                font-size: 18pt;
+                font-weight: bold;
+                text-align: center;
+                margin-bottom: 10px;
+            }
+            
+            .print-date {
+                text-align: center;
+                font-size: 11pt;
+                margin-bottom: 15px;
+                color: #666;
             }
             
             .fault-item {
@@ -2975,7 +3066,6 @@
         }
         
         function printFaults() {
-            // Add print title and date
             const faultList = document.getElementById('faultList');
             const filterName = currentFaultFilter === 'all' ? 'All Faults' : `${currentFaultFilter} Faults`;
             const printDate = new Date().toLocaleDateString('en-US', { 
@@ -2985,31 +3075,116 @@
                 day: 'numeric' 
             });
             
-            // Create print header
-            const printHeader = document.createElement('div');
-            printHeader.innerHTML = `
-                <div class="print-title">CCTV & Intercom Fault Report - ${filterName}</div>
-                <div class="print-date">${printDate}</div>
+            // Filter faults based on current filter ONLY (ignore search for printing all)
+            let faultsToDisplay = allFaults;
+            if (currentFaultFilter !== 'all') {
+                faultsToDisplay = allFaults.filter(f => f.fault_type === currentFaultFilter);
+            }
+            // Note: We're NOT applying search filter here so ALL faults print
+            // If you want to respect search, uncomment the block below:
+            /*
+            if (currentSearchText.trim() !== '') {
+                const searchLower = currentSearchText.toLowerCase();
+                faultsToDisplay = faultsToDisplay.filter(fault => {
+                    const locationParts = [];
+                    if (fault.flat_number) locationParts.push(`Flat ${fault.flat_number}`);
+                    if (fault.block_number) locationParts.push(`Block ${fault.block_number}`);
+                    if (fault.floor_number) locationParts.push(`Floor ${fault.floor_number}`);
+                    const locationStr = locationParts.join(' | ').toLowerCase();
+                    
+                    return fault.id.toString().includes(searchLower) ||
+                           locationStr.includes(searchLower) ||
+                           fault.description.toLowerCase().includes(searchLower) ||
+                           (fault.contact_details && fault.contact_details.toLowerCase().includes(searchLower)) ||
+                           (fault.additional_notes && fault.additional_notes.toLowerCase().includes(searchLower));
+                });
+            }
+            */
+            
+            console.log(`Printing ${faultsToDisplay.length} faults (Total in system: ${allFaults.length})`)
+            
+            // Create Excel-style table
+            let tableHTML = `
+                <div class="print-table-container">
+                    <div class="print-title">CCTV & Intercom Fault Report - ${filterName}</div>
+                    <div class="print-date">${printDate}</div>
+                    <table class="fault-print-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 5%;">ID</th>
+                                <th style="width: 8%;">Type</th>
+                                <th style="width: 12%;">Date/Time</th>
+                                <th style="width: 18%;">Location</th>
+                                <th style="width: 15%;">Fault</th>
+                                <th style="width: 12%;">Contact</th>
+                                <th style="width: 20%;">Notes</th>
+                                <th style="width: 10%;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
             `;
             
-            // Insert at the beginning of fault list
-            faultList.insertBefore(printHeader, faultList.firstChild);
+            // Add rows for each fault
+            faultsToDisplay.forEach(fault => {
+                const timestamp = new Date(fault.timestamp);
+                const dateStr = timestamp.toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric',
+                    year: 'numeric'
+                });
+                const timeStr = timestamp.toLocaleTimeString('en-US', { 
+                    hour: '2-digit', 
+                    minute: '2-digit'
+                });
+                
+                // Build location string
+                const locationParts = [];
+                if (fault.flat_number) locationParts.push(`Flat ${fault.flat_number}`);
+                if (fault.block_number) locationParts.push(`Blk ${fault.block_number}`);
+                if (fault.floor_number) locationParts.push(`Flr ${fault.floor_number}`);
+                const locationStr = locationParts.join(', ') || 'N/A';
+                
+                const contact = fault.contact_details || '-';
+                const notes = fault.additional_notes || '-';
+                const status = fault.status.replace('_', ' ').toUpperCase();
+                
+                tableHTML += `
+                    <tr>
+                        <td>${fault.id}</td>
+                        <td>${fault.fault_type}</td>
+                        <td>${dateStr}<br>${timeStr}</td>
+                        <td>${locationStr}</td>
+                        <td>${fault.description}</td>
+                        <td>${contact}</td>
+                        <td>${notes}</td>
+                        <td style="font-weight: bold;">${status}</td>
+                    </tr>
+                `;
+            });
             
-            // Temporarily remove max-height constraint to show all items for printing
-            const originalMaxHeight = faultList.style.maxHeight;
-            const originalOverflow = faultList.style.overflow;
-            faultList.style.maxHeight = 'none';
-            faultList.style.overflow = 'visible';
+            tableHTML += `
+                        </tbody>
+                    </table>
+                    <div style="margin-top: 20px; font-size: 9pt; text-align: center; color: #666;">
+                        Total Faults: ${faultsToDisplay.length}
+                    </div>
+                </div>
+            `;
+            
+            // Insert table directly in document body to avoid container restrictions
+            const printContainer = document.createElement('div');
+            printContainer.id = 'faultPrintContainer';
+            printContainer.style.display = 'none'; // Hidden on screen
+            printContainer.innerHTML = tableHTML;
+            document.body.appendChild(printContainer);
             
             // Trigger print
             window.print();
             
-            // Restore original styles and remove print header after print dialog
+            // Remove print table after print dialog closes
             setTimeout(() => {
-                printHeader.remove();
-                faultList.style.maxHeight = originalMaxHeight;
-                faultList.style.overflow = originalOverflow;
-            }, 1000);
+                printContainer.remove();
+            }, 500);
         }
 
         function updateFaultStatus(faultId, status) {
