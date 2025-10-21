@@ -2563,9 +2563,9 @@
                 // Add empty row for new entry
                 html += `<tr id="newRow">
                     <td><input type="time" id="new_time" placeholder="Time"></td>
-                    <td><input type="text" id="new_flat" placeholder="Flat"></td>
-                    <td><input type="text" id="new_reported_by" placeholder="Name"></td>
-                    <td><input type="text" id="new_description" placeholder="Incident details..."></td>
+                    <td><input type="text" id="new_flat" placeholder="Flat (optional)"></td>
+                    <td><input type="text" id="new_reported_by" placeholder="Name *"></td>
+                    <td><input type="text" id="new_description" placeholder="Incident details... *"></td>
                     <td><button class="btn btn-success btn-sm" onclick="addNewOccurrence()">Add</button></td>
                 </tr>`;
                 
@@ -2612,14 +2612,14 @@
             const reportedBy = document.getElementById('new_reported_by').value;
             const description = document.getElementById('new_description').value;
             
-            if (!time || !flat || !reportedBy || !description) {
-                showAlert('Please fill in all fields!', 'danger');
+            if (!time || !reportedBy || !description) {
+                showAlert('Please fill in the required fields (Time, By, and Incident Report)!', 'danger');
                 return;
             }
             
             const data = {
                 time: time,
-                flat_number: flat,
+                flat_number: flat || '',  // Allow empty flat number
                 reported_by: reportedBy,
                 description: description
             };
@@ -3525,35 +3525,6 @@
             });
         }
 
-        function printPDF(pdfPath) {
-            // Print a PDF file to the local printer
-            if (!confirm('Send this PDF to your default printer?')) {
-                return;
-            }
-            
-            fetch('/api/print-pdf', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ 
-                    pdf_path: pdfPath,
-                    staff_name: settingsUnlockedStaff || 'Unknown'
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showAlert(`PDF sent to printer: ${data.file}`, 'success');
-                } else {
-                    showAlert('Error printing PDF: ' + data.error, 'danger');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showAlert('Error printing PDF', 'danger');
-            });
-        }
         
         function loadEmailHistory() {
             fetch('/api/email-logs')
@@ -3572,7 +3543,7 @@
                         Total: ${data.length} emails sent
                     </div>` : '';
                 
-                let html = countBadge + '<table class="table" style="margin-bottom: 0;"><thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Date & Time</th><th>Recipient(s)</th><th>Subject</th><th>PDF File</th><th>Action</th></tr></thead><tbody>';
+                let html = countBadge + '<table class="table" style="margin-bottom: 0;"><thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Date & Time</th><th>Recipient(s)</th><th>Subject</th><th>PDF File</th></tr></thead><tbody>';
                 data.forEach((log, index) => {
                     const sentDate = new Date(log.sent_date);
                     const dateStr = sentDate.toLocaleDateString();
@@ -3587,11 +3558,6 @@
                         <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="${log.recipient}">${log.recipient}</td>
                         <td>${log.subject}</td>
                         <td><small style="font-family: monospace;">${fileName}</small></td>
-                        <td style="white-space: nowrap;">
-                            <button onclick="printPDF('${log.pdf_path.replace(/\\/g, '\\\\')}')" class="btn btn-primary" style="padding: 5px 12px; font-size: 0.85em;" title="Print this PDF">
-                                🖨️ Print
-                            </button>
-                        </td>
                     </tr>`;
                 });
                 html += '</tbody></table>';
