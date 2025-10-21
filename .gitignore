@@ -40,6 +40,7 @@ reports/CSV/*.csv
 
 # Logs
 logs/*.log
+logs/*.txt
 
 # IDE
 .vscode/
