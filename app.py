@@ -1425,46 +1425,6 @@ def email_logs():
         'pdf_path': log.pdf_path
     } for log in logs])
 
-@app.route('/api/print-pdf', methods=['POST'])
-def print_pdf():
-    """Print a PDF to the default printer"""
-    try:
-        data = request.json
-        pdf_path = data.get('pdf_path')
-        
-        if not pdf_path:
-            return jsonify({'success': False, 'error': 'PDF path required'})
-        
-        # Check if file exists
-        if not os.path.exists(pdf_path):
-            return jsonify({'success': False, 'error': 'PDF file not found'})
-        
-        # Print using Windows default PDF viewer
-        import subprocess
-        
-        # Get absolute path
-        abs_path = os.path.abspath(pdf_path)
-        
-        # Use Windows shell to print (opens in default PDF viewer and prints)
-        # /p parameter tells Windows to print the file
-        subprocess.Popen(['start', '/wait', '', '/p', abs_path], shell=True)
-        
-        print(f"Sent to printer: {abs_path}")
-        
-        # Log the print action
-        staff_name = data.get('staff_name', 'Unknown')
-        log_settings_access(staff_name, f'Printed PDF: {os.path.basename(pdf_path)}', True, request.remote_addr)
-        
-        return jsonify({
-            'success': True,
-            'message': 'PDF sent to printer',
-            'file': os.path.basename(pdf_path)
-        })
-        
-    except Exception as e:
-        print(f"Error printing PDF: {e}")
-        return jsonify({'success': False, 'error': str(e)})
-
 @app.route('/api/staff-members', methods=['GET', 'POST'])
 def staff_members():
     if request.method == 'POST':
