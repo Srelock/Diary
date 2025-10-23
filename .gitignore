@@ -1,24 +1,51 @@
-# Database - keep your diary data local
-instance/
-*.db
-
-# Log files - keep your logs local
-logs/
-
-# Generated reports - keep your reports local
-reports/
-
-# Python cache
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
 *.pyc
 *.pyo
 *.pyd
+*.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
 # Virtual environment
-venv/
 env/
+venv/
 ENV/
+
+# Flask
+instance/
+.webassets-cache
+
+# Database - keep your diary data local
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs - keep your logs local
+logs/*.log
+logs/*.txt
+
+# Generated reports - keep your reports local
+reports/*.pdf
+reports/*.csv
+reports/PDF/*.pdf
+reports/CSV/*.csv
 
 # IDE
 .vscode/
@@ -32,3 +59,11 @@ ENV/
 Thumbs.db
 desktop.ini
 
+# Environment variables
+.env
+.env.local
+
+# Temporary files
+*.tmp
+*.bak
+*.old
