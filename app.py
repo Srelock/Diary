@@ -16,6 +16,8 @@ import json
 import hashlib
 import webbrowser
 import threading
+import signal
+import sys
 
 # Import configuration from config.py
 try:
@@ -109,6 +111,16 @@ class ShiftLeader(db.Model):
     created_date = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
 
+class ActivityLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    user_name = db.Column(db.String(100), nullable=False)  # Shift leader name
+    action_type = db.Column(db.String(50), nullable=False)  # e.g., 'delete', 'modify', 'add'
+    entity_type = db.Column(db.String(50), nullable=False)  # e.g., 'occurrence', 'staff', 'settings'
+    entity_id = db.Column(db.String(100))  # ID of affected entity
+    description = db.Column(db.Text, nullable=False)  # Human-readable description
+    ip_address = db.Column(db.String(50))
+
 # Initialize scheduler
 scheduler = BackgroundScheduler()
 
@@ -154,22 +166,20 @@ def send_daily_report(report_date=None):
             DailyOccurrence.sent == False
         ).all()
         
-        # Generate PDF regardless of whether there are occurrences
+        # Generate PDF and CSV for local backup (not sent via email)
         pdf_path = generate_daily_pdf(occurrences, report_date)
-        
-        # Generate CSV backup for safety
         csv_path = generate_daily_csv(occurrences, report_date)
         
         # Log the email FIRST (before sending) to prevent duplicate sends on retry
         email_log = EmailLog(
             recipient=settings.recipient_email,
             subject=f"Daily Report - {report_date}",
-            pdf_path=pdf_path
+            pdf_path=pdf_path  # Saved locally, not emailed
         )
         db.session.add(email_log)
         db.session.commit()
         
-        # Now attempt to send email
+        # Send email with HTML styling (no PDF attachment)
         email_sent = send_email_with_pdf(pdf_path, f"Daily Report - {report_date}", settings.recipient_email)
         
         if email_sent:
@@ -180,7 +190,7 @@ def send_daily_report(report_date=None):
                 db.session.commit()
             
             print(f"Daily report sent successfully for {report_date}")
-            print(f"CSV backup saved to: {csv_path}")
+            print(f"Local backups saved - PDF: {pdf_path}, CSV: {csv_path}")
         else:
             print(f"⚠️ Email failed to send for {report_date}, but PDF/CSV saved locally")
             print(f"PDF: {pdf_path}")
@@ -739,6 +749,353 @@ def generate_daily_csv(occurrences, report_date=None):
     
     return filepath
 
+def generate_email_html(occurrences, report_date=None):
+    """Generate HTML email body that matches the Daily Occurrences webpage styling"""
+    # Use provided date or default to today
+    if report_date is None:
+        report_date = datetime.now().date()
+    
+    # Get staff schedule info
+    today = report_date
+    porter_groups, all_staff = get_porter_groups()
+    
+    # Calculate staff schedule (same logic as PDF generation)
+    rotation_pattern = {
+        # Week 1
+        (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
+        (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
+        # Week 2
+        (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
+        (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
+        # Week 3
+        (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
+        (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
+        # Week 4
+        (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
+        (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
+    }
+    
+    reference_date = datetime(2025, 9, 29).date()
+    days_diff = (today - reference_date).days
+    week_in_cycle = (days_diff // 7) % 4
+    day_of_week = today.weekday()
+    pattern_key = (week_in_cycle, day_of_week)
+    colors_off = rotation_pattern.get(pattern_key, None)
+    
+    if colors_off and not isinstance(colors_off, list):
+        colors_off = [colors_off]
+    
+    staff_off_names = []
+    if colors_off:
+        for color in colors_off:
+            if color in ['red', 'yellow', 'green', 'blue'] and color in porter_groups:
+                if 'shift1' in porter_groups[color]:
+                    staff_off_names.append(porter_groups[color]['shift1'])
+                if 'shift2' in porter_groups[color]:
+                    staff_off_names.append(porter_groups[color]['shift2'])
+    
+    # Night shift rotation
+    night_shift_rotation = {
+        (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
+        (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
+        (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
+        (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
+        (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
+        (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
+        (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
+        (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
+    }
+    
+    night_colors_off = night_shift_rotation.get(pattern_key, None)
+    if night_colors_off and not isinstance(night_colors_off, list):
+        night_colors_off = [night_colors_off]
+    
+    if night_colors_off:
+        for color in night_colors_off:
+            if color in porter_groups:
+                if 'shift3' in porter_groups[color]:
+                    staff_off_names.append(porter_groups[color]['shift3'])
+    
+    # Check database for holidays and sick leave
+    staff_on_leave = {}
+    leave_records = StaffRota.query.filter_by(date=today).all()
+    for record in leave_records:
+        if record.status in ['holiday', 'sick', 'off']:
+            staff_on_leave[record.staff_name] = record.status.upper()
+    
+    # Sort staff names
+    shift1_staff = sorted(all_staff['Shift 1'], reverse=True)
+    shift2_staff = sorted(all_staff['Shift 2'], reverse=True)
+    night_shift_staff = sorted(all_staff['Night Shift'], reverse=True)
+    
+    # Get water temperatures
+    today_start = datetime.combine(report_date, datetime.min.time())
+    today_end = datetime.combine(report_date, datetime.max.time())
+    water_temps = WaterTemperature.query.filter(
+        WaterTemperature.timestamp >= today_start,
+        WaterTemperature.timestamp <= today_end
+    ).order_by(WaterTemperature.time_recorded).all()
+    
+    # Build HTML email
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
+    <div style="max-width: 1200px; margin: 0 auto; background: white; border-radius: 15px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.1);">
+        
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%); color: white; padding: 30px; text-align: center;">
+            <h1 style="font-size: 2.5em; margin: 0 0 10px 0; font-weight: 300;">Daily Occurrences Report</h1>
+            <p style="font-size: 1.1em; margin: 0; opacity: 0.9;">{report_date.strftime('%B %d, %Y')}</p>
+        </div>
+        
+        <!-- Content -->
+        <div style="padding: 30px;">
+            
+            <!-- Staff Schedule Section -->
+            <div style="margin-bottom: 30px;">
+                <h2 style="color: #2c3e50; font-size: 1.5em; margin-bottom: 20px; border-bottom: 2px solid #007bff; padding-bottom: 10px;">Today's Staff Schedule</h2>
+                
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <!-- Shift 1 -->
+                        <td style="width: 33.33%; padding: 10px; vertical-align: top;">
+                            <div style="background: #e0f2f7; border: 2px solid #dee2e6; border-radius: 8px; padding: 20px 15px; text-align: center;">
+                                <div style="font-weight: bold; font-size: 14px; color: #000; margin-bottom: 15px; background: #cce7f0; padding: 8px; border-radius: 4px;">SHIFT 1</div>
+                                <div style="font-size: 12px; color: #666; margin-bottom: 15px;">(7am-2pm / 2pm-10pm)</div>
+"""
+    
+    # Add Shift 1 staff
+    if shift1_staff:
+        for staff_name in shift1_staff:
+            if staff_name in staff_on_leave:
+                status = staff_on_leave[staff_name]
+            else:
+                is_off = staff_name in staff_off_names
+                status = 'OFF' if is_off else 'ON'
+            
+            # Status styling
+            if status == 'HOLIDAY':
+                status_bg = '#fff3cd'
+                status_color = '#856404'
+            elif status == 'SICK':
+                status_bg = '#f8d7da'
+                status_color = '#721c24'
+            elif status == 'OFF':
+                status_bg = '#f8d7da'
+                status_color = '#721c24'
+            else:  # ON
+                status_bg = '#d4edda'
+                status_color = '#155724'
+            
+            html += f"""
+                                <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px;">
+                                    <tr>
+                                        <td style="text-align: left; padding: 8px 0; border-bottom: 1px solid #b8d4e0;">
+                                            <span style="font-size: 16px; font-weight: bold; color: #333;">{staff_name}</span>
+                                        </td>
+                                        <td style="text-align: right; padding: 8px 0; border-bottom: 1px solid #b8d4e0;">
+                                            <span style="font-size: 12px; font-weight: bold; padding: 4px 8px; border-radius: 4px; background: {status_bg}; color: {status_color};">{status}</span>
+                                        </td>
+                                    </tr>
+                                </table>
+"""
+    else:
+        html += '<div style="font-size: 13px; color: #666;">No staff assigned</div>'
+    
+    html += """
+                            </div>
+                        </td>
+                        
+                        <!-- Shift 2 -->
+                        <td style="width: 33.33%; padding: 10px; vertical-align: top;">
+                            <div style="background: #e0f2f7; border: 2px solid #dee2e6; border-radius: 8px; padding: 20px 15px; text-align: center;">
+                                <div style="font-weight: bold; font-size: 14px; color: #000; margin-bottom: 15px; background: #cce7f0; padding: 8px; border-radius: 4px;">SHIFT 2</div>
+                                <div style="font-size: 12px; color: #666; margin-bottom: 15px;">(2pm-10pm / 7am-2pm)</div>
+"""
+    
+    # Add Shift 2 staff
+    if shift2_staff:
+        for staff_name in shift2_staff:
+            if staff_name in staff_on_leave:
+                status = staff_on_leave[staff_name]
+            else:
+                is_off = staff_name in staff_off_names
+                status = 'OFF' if is_off else 'ON'
+            
+            if status == 'HOLIDAY':
+                status_bg = '#fff3cd'
+                status_color = '#856404'
+            elif status == 'SICK':
+                status_bg = '#f8d7da'
+                status_color = '#721c24'
+            elif status == 'OFF':
+                status_bg = '#f8d7da'
+                status_color = '#721c24'
+            else:
+                status_bg = '#d4edda'
+                status_color = '#155724'
+            
+            html += f"""
+                                <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px;">
+                                    <tr>
+                                        <td style="text-align: left; padding: 8px 0; border-bottom: 1px solid #b8d4e0;">
+                                            <span style="font-size: 16px; font-weight: bold; color: #333;">{staff_name}</span>
+                                        </td>
+                                        <td style="text-align: right; padding: 8px 0; border-bottom: 1px solid #b8d4e0;">
+                                            <span style="font-size: 12px; font-weight: bold; padding: 4px 8px; border-radius: 4px; background: {status_bg}; color: {status_color};">{status}</span>
+                                        </td>
+                                    </tr>
+                                </table>
+"""
+    else:
+        html += '<div style="font-size: 13px; color: #666;">No staff assigned</div>'
+    
+    html += """
+                            </div>
+                        </td>
+                        
+                        <!-- Night Shift -->
+                        <td style="width: 33.33%; padding: 10px; vertical-align: top;">
+                            <div style="background: #e0f2f7; border: 2px solid #dee2e6; border-radius: 8px; padding: 20px 15px; text-align: center;">
+                                <div style="font-weight: bold; font-size: 14px; color: #000; margin-bottom: 15px; background: #cce7f0; padding: 8px; border-radius: 4px;">NIGHT SHIFT</div>
+                                <div style="font-size: 12px; color: #666; margin-bottom: 15px;">(10pm-7am)</div>
+"""
+    
+    # Add Night Shift staff
+    if night_shift_staff:
+        for staff_name in night_shift_staff:
+            if staff_name in staff_on_leave:
+                status = staff_on_leave[staff_name]
+            else:
+                is_off = staff_name in staff_off_names
+                status = 'OFF' if is_off else 'ON'
+            
+            if status == 'HOLIDAY':
+                status_bg = '#fff3cd'
+                status_color = '#856404'
+            elif status == 'SICK':
+                status_bg = '#f8d7da'
+                status_color = '#721c24'
+            elif status == 'OFF':
+                status_bg = '#f8d7da'
+                status_color = '#721c24'
+            else:
+                status_bg = '#d4edda'
+                status_color = '#155724'
+            
+            html += f"""
+                                <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px;">
+                                    <tr>
+                                        <td style="text-align: left; padding: 8px 0; border-bottom: 1px solid #b8d4e0;">
+                                            <span style="font-size: 16px; font-weight: bold; color: #333;">{staff_name}</span>
+                                        </td>
+                                        <td style="text-align: right; padding: 8px 0; border-bottom: 1px solid #b8d4e0;">
+                                            <span style="font-size: 12px; font-weight: bold; padding: 4px 8px; border-radius: 4px; background: {status_bg}; color: {status_color};">{status}</span>
+                                        </td>
+                                    </tr>
+                                </table>
+"""
+    else:
+        html += '<div style="font-size: 13px; color: #666;">No staff assigned</div>'
+    
+    html += """
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            
+            <!-- Daily Occurrences Section -->
+            <div style="margin-bottom: 30px;">
+                <h2 style="color: #2c3e50; font-size: 1.5em; margin-bottom: 20px; border-bottom: 2px solid #007bff; padding-bottom: 10px;">Daily Occurrences</h2>
+"""
+    
+    # Add occurrences table or "no occurrences" message
+    if not occurrences or len(occurrences) == 0:
+        html += """
+                <div style="background: #d4edda; color: #155724; padding: 20px; border-radius: 8px; text-align: center; font-size: 1.1em;">
+                    No incidents or occurrences were recorded today.
+                </div>
+"""
+    else:
+        html += """
+                <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                    <thead>
+                        <tr>
+                            <th style="background: #e0f2f7; padding: 20px 15px; text-align: center; font-weight: 800; color: #000; border-bottom: 3px solid #dee2e6; font-size: 1.2em; letter-spacing: 0.5px; width: 80px;">TIME</th>
+                            <th style="background: #e0f2f7; padding: 20px 15px; text-align: center; font-weight: 800; color: #000; border-bottom: 3px solid #dee2e6; font-size: 1.2em; letter-spacing: 0.5px; width: 80px;">FLAT</th>
+                            <th style="background: #e0f2f7; padding: 20px 15px; text-align: center; font-weight: 800; color: #000; border-bottom: 3px solid #dee2e6; font-size: 1.2em; letter-spacing: 0.5px; width: 80px;">BY</th>
+                            <th style="background: #e0f2f7; padding: 20px 15px; text-align: left; font-weight: 800; color: #000; border-bottom: 3px solid #dee2e6; font-size: 1.2em; letter-spacing: 0.5px;">INCIDENT REPORT</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+"""
+        
+        for occurrence in occurrences:
+            html += f"""
+                        <tr>
+                            <td style="padding: 12px 10px; border: 2px solid #dee2e6; text-align: center; background: white;">{occurrence.time}</td>
+                            <td style="padding: 12px 10px; border: 2px solid #dee2e6; text-align: center; background: white;">{occurrence.flat_number}</td>
+                            <td style="padding: 12px 10px; border: 2px solid #dee2e6; text-align: center; background: white;">{occurrence.reported_by}</td>
+                            <td style="padding: 12px 10px; border: 2px solid #dee2e6; text-align: left; background: white;">{occurrence.description}</td>
+                        </tr>
+"""
+        
+        html += """
+                    </tbody>
+                </table>
+"""
+    
+    html += """
+            </div>
+            
+            <!-- Water Temperature Section -->
+            <div style="margin-bottom: 30px;">
+                <h2 style="color: #2c3e50; font-size: 1.5em; margin-bottom: 20px; border-bottom: 2px solid #007bff; padding-bottom: 10px;">Water Temperature Readings</h2>
+"""
+    
+    # Add water temperature readings
+    if water_temps and len(water_temps) > 0:
+        temp_entries = []
+        for temp_reading in water_temps:
+            temp_value = temp_reading.temperature
+            if temp_value == int(temp_value):
+                temp_str = f"{int(temp_value)}"
+            else:
+                temp_str = f"{temp_value:.1f}".rstrip('0').rstrip('.')
+            temp_entries.append(f"{temp_reading.time_recorded} [{temp_str}]")
+        
+        temp_text = ", ".join(temp_entries)
+        
+        html += f"""
+                <div style="background: white; border: 2px solid #dee2e6; border-radius: 8px; padding: 20px; font-size: 1em; line-height: 1.6;">
+                    {temp_text}
+                </div>
+"""
+    else:
+        html += """
+                <div style="background: #f8f9fa; color: #6c757d; padding: 20px; border-radius: 8px; text-align: center; font-size: 1.1em;">
+                    No water temperature readings recorded today.
+                </div>
+"""
+    
+    html += """
+            </div>
+            
+        </div>
+        
+    </div>
+</body>
+</html>
+"""
+    
+    return html
+
+
 def send_email_with_pdf(pdf_path, subject, recipient=None):
     """Send email with PDF attachment - supports multiple recipients"""
     try:
@@ -768,19 +1125,31 @@ def send_email_with_pdf(pdf_path, subject, recipient=None):
         else:
             recipients = recipient
             
+        # Get occurrences and report date from the subject line
+        # Extract date from subject like "Daily Report - 2025-10-21"
+        try:
+            report_date_str = subject.split(' - ')[1]
+            report_date = datetime.strptime(report_date_str, '%Y-%m-%d').date()
+        except:
+            report_date = datetime.now().date()
+        
+        # Get occurrences for the report date
+        next_day = report_date + timedelta(days=1)
+        occurrences = DailyOccurrence.query.filter(
+            DailyOccurrence.timestamp >= report_date,
+            DailyOccurrence.timestamp < next_day
+        ).all()
+        
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = ', '.join(recipients)  # Display all recipients in header
         msg['Subject'] = subject
         
-        body = f"Please find attached the daily occurrences report for {datetime.now().strftime('%B %d, %Y')}."
-        msg.attach(MIMEText(body, 'plain'))
+        # Generate beautiful HTML email body that matches the webpage styling
+        html_body = generate_email_html(occurrences, report_date)
+        msg.attach(MIMEText(html_body, 'html'))
         
-        # Attach PDF
-        with open(pdf_path, "rb") as f:
-            attach = MIMEApplication(f.read(), _subtype="pdf")
-            attach.add_header('Content-Disposition', 'attachment', filename=os.path.basename(pdf_path))
-            msg.attach(attach)
+        # Note: PDF attachment removed as per user request - email contains only HTML styling
         
         # Send email to all recipients
         server = smtplib.SMTP(smtp_server, smtp_port)
@@ -837,6 +1206,14 @@ def daily_occurrences():
 def delete_daily_occurrence(occurrence_id):
     occurrence = DailyOccurrence.query.get(occurrence_id)
     if occurrence:
+        # Get user name from request
+        data = request.get_json() or {}
+        user_name = data.get('user_name', 'Unknown')
+        
+        # Log the deletion
+        description = f"Deleted occurrence: {occurrence.time} - Flat {occurrence.flat_number} - {occurrence.description[:50]}..."
+        log_activity(user_name, 'delete', 'occurrence', description, occurrence_id, request.remote_addr)
+        
         db.session.delete(occurrence)
         db.session.commit()
         return jsonify({'success': True})
@@ -881,6 +1258,14 @@ def staff_rota():
 def delete_staff_rota(rota_id):
     rota = StaffRota.query.get(rota_id)
     if rota:
+        # Get user name from request
+        data = request.get_json() or {}
+        user_name = data.get('user_name', 'Unknown')
+        
+        # Log the deletion
+        description = f"Deleted staff rota: {rota.staff_name} - {rota.date} - {rota.status}"
+        log_activity(user_name, 'delete', 'staff_rota', description, rota_id, request.remote_addr)
+        
         db.session.delete(rota)
         db.session.commit()
         return jsonify({'success': True})
@@ -1238,6 +1623,141 @@ def test_export():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/api/reprint-report', methods=['POST'])
+def reprint_report():
+    """Reprint a report for a specific date (from Settings tab)"""
+    try:
+        data = request.json
+        date_str = data.get('date')
+        
+        if not date_str:
+            return jsonify({'success': False, 'error': 'Date parameter required'}), 400
+        
+        # Parse the date
+        report_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        next_day = report_date + timedelta(days=1)
+        
+        # Get occurrences for the report date
+        occurrences = DailyOccurrence.query.filter(
+            DailyOccurrence.timestamp >= report_date,
+            DailyOccurrence.timestamp < next_day
+        ).order_by(DailyOccurrence.time).all()
+        
+        # Get water temperatures for the report date
+        today_start = datetime.combine(report_date, datetime.min.time())
+        today_end = datetime.combine(report_date, datetime.max.time())
+        water_temps = WaterTemperature.query.filter(
+            WaterTemperature.timestamp >= today_start,
+            WaterTemperature.timestamp <= today_end
+        ).all()
+        
+        # Generate the PDF
+        pdf_path = generate_daily_pdf(occurrences, report_date)
+        
+        # Get the filename
+        pdf_filename = os.path.basename(pdf_path)
+        
+        print(f"✓ Reprinted report for {report_date}: {pdf_filename}")
+        print(f"  - Occurrences: {len(occurrences)}")
+        print(f"  - Water temps: {len(water_temps)}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'PDF report generated successfully',
+            'pdf_path': pdf_path,
+            'pdf_filename': pdf_filename,
+            'occurrences_count': len(occurrences),
+            'water_temps_count': len(water_temps)
+        })
+    except ValueError as e:
+        return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+    except Exception as e:
+        print(f"Error reprinting report: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/test-email', methods=['POST'])
+def test_email():
+    """Send a test email with today's data"""
+    try:
+        # Get settings
+        settings = ScheduleSettings.query.first()
+        if not settings or not settings.email_enabled:
+            return jsonify({
+                'success': False, 
+                'error': 'Email sending is disabled. Please enable it in settings first.'
+            })
+        
+        # Verify email settings are configured
+        if not settings.sender_email or not settings.sender_password:
+            return jsonify({
+                'success': False,
+                'error': 'Sender email or password not configured. Please check Settings > Email Configuration.'
+            })
+        
+        if not settings.recipient_email:
+            return jsonify({
+                'success': False,
+                'error': 'Recipient email not configured. Please enter a recipient email address.'
+            })
+        
+        print(f"\n{'='*50}")
+        print(f"SENDING TEST EMAIL")
+        print(f"{'='*50}")
+        print(f"From: {settings.sender_email}")
+        print(f"To: {settings.recipient_email}")
+        print(f"SMTP Server: {settings.smtp_server}:{settings.smtp_port}")
+        
+        # Get today's occurrences
+        today = datetime.now().date()
+        next_day = today + timedelta(days=1)
+        occurrences = DailyOccurrence.query.filter(
+            DailyOccurrence.timestamp >= today,
+            DailyOccurrence.timestamp < next_day,
+            DailyOccurrence.sent == False
+        ).all()
+        
+        print(f"Occurrences found: {len(occurrences)}")
+        
+        # Generate PDF and CSV for local backup (not sent via email)
+        pdf_path = generate_daily_pdf(occurrences, today)
+        csv_path = generate_daily_csv(occurrences, today)
+        print(f"PDF generated for local backup: {pdf_path}")
+        print(f"CSV generated for local backup: {csv_path}")
+        
+        # Send test email with HTML styling (no PDF attachment)
+        print(f"Attempting to send HTML email (no PDF attachment)...")
+        email_sent = send_email_with_pdf(
+            pdf_path, 
+            f"TEST - Daily Report - {today}", 
+            settings.recipient_email
+        )
+        
+        if email_sent:
+            occurrence_count = len(occurrences) if occurrences else 0
+            print(f"✓ HTML email sent successfully (no PDF attachment)!")
+            print(f"{'='*50}\n")
+            return jsonify({
+                'success': True,
+                'message': f'Test email sent successfully to {settings.recipient_email}!\n\nEmail includes:\n- Beautiful HTML styling\n- {occurrence_count} occurrence(s)\n- Staff schedule in 3 columns\n- Water temperature readings\n\nNo PDF attachment (as requested)\n\nCheck your inbox!',
+                'count': occurrence_count
+            })
+        else:
+            print(f"✗ Email failed to send!")
+            print(f"{'='*50}\n")
+            return jsonify({
+                'success': False,
+                'error': 'Failed to send test email. Check console for details. Common issues:\n- Wrong email/password\n- Gmail: Need App Password, not regular password\n- Firewall blocking SMTP\n- Check spam folder'
+            })
+            
+    except Exception as e:
+        print(f"✗ ERROR: {str(e)}")
+        print(f"{'='*50}\n")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Error sending test email: {str(e)}'})
+
 @app.route('/api/test-clear', methods=['POST'])
 def test_clear():
     """Test function to clear today's diary entries"""
@@ -1283,6 +1803,58 @@ def log_settings_access(staff_name, action, success, ip_address=None):
         print(f"Settings access logged: {log_entry.strip()}")
     except Exception as e:
         print(f"Error logging settings access: {e}")
+
+def log_activity(user_name, action_type, entity_type, description, entity_id=None, ip_address=None):
+    """Log user activity to database"""
+    try:
+        activity = ActivityLog(
+            user_name=user_name,
+            action_type=action_type,
+            entity_type=entity_type,
+            entity_id=str(entity_id) if entity_id else None,
+            description=description,
+            ip_address=ip_address
+        )
+        db.session.add(activity)
+        db.session.commit()
+        print(f"Activity logged: {user_name} - {description}")
+    except Exception as e:
+        print(f"Error logging activity: {e}")
+        db.session.rollback()
+
+def log_shutdown(reason="Normal shutdown"):
+    """Log application shutdown to a text file"""
+    try:
+        log_dir = 'logs'
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, 'shutdown_log.txt')
+        
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        log_entry = f"[{timestamp}] APPLICATION STOPPED - Reason: {reason}\n"
+        
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
+        
+        print(f"Shutdown logged: {log_entry.strip()}")
+    except Exception as e:
+        print(f"Error logging shutdown: {e}")
+
+def log_startup():
+    """Log application startup to a text file"""
+    try:
+        log_dir = 'logs'
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, 'shutdown_log.txt')
+        
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        log_entry = f"[{timestamp}] APPLICATION STARTED\n"
+        
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
+        
+        print(f"Startup logged: {log_entry.strip()}")
+    except Exception as e:
+        print(f"Error logging startup: {e}")
 
 @app.route('/api/verify-settings-pin', methods=['POST'])
 def verify_settings_pin():
@@ -1347,6 +1919,47 @@ def get_settings_access_logs():
         print(f"Error reading access logs: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/api/activity-logs', methods=['GET'])
+def get_activity_logs():
+    """Get recent activity logs with filtering options"""
+    try:
+        # Get filter parameters
+        days = request.args.get('days', 7, type=int)  # Default last 7 days
+        user_name = request.args.get('user', None)
+        action_type = request.args.get('action', None)
+        limit = request.args.get('limit', 100, type=int)
+        
+        # Calculate date range
+        start_date = datetime.now() - timedelta(days=days)
+        
+        # Build query
+        query = ActivityLog.query.filter(ActivityLog.timestamp >= start_date)
+        
+        if user_name:
+            query = query.filter(ActivityLog.user_name == user_name)
+        if action_type:
+            query = query.filter(ActivityLog.action_type == action_type)
+        
+        # Execute query
+        logs = query.order_by(ActivityLog.timestamp.desc()).limit(limit).all()
+        
+        return jsonify({
+            'success': True,
+            'logs': [{
+                'id': log.id,
+                'timestamp': log.timestamp.isoformat(),
+                'user_name': log.user_name,
+                'action_type': log.action_type,
+                'entity_type': log.entity_type,
+                'entity_id': log.entity_id,
+                'description': log.description,
+                'ip_address': log.ip_address
+            } for log in logs],
+            'total': len(logs)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/api/schedule-settings', methods=['GET', 'POST'])
 def schedule_settings():
     if request.method == 'POST':
@@ -1381,6 +1994,10 @@ def schedule_settings():
         # Log the settings change
         staff_name = data.get('staff_name', 'Unknown')
         log_settings_access(staff_name, 'Settings Modified', True, request.remote_addr)
+        
+        # Also log to activity log
+        description = f"Modified email settings: Time={settings.email_time}, Enabled={settings.email_enabled}"
+        log_activity(staff_name, 'modify', 'settings', description, None, request.remote_addr)
         
         return jsonify({'success': True})
     
@@ -1425,50 +2042,12 @@ def email_logs():
         'pdf_path': log.pdf_path
     } for log in logs])
 
-@app.route('/api/print-pdf', methods=['POST'])
-def print_pdf():
-    """Print a PDF to the default printer"""
-    try:
-        data = request.json
-        pdf_path = data.get('pdf_path')
-        
-        if not pdf_path:
-            return jsonify({'success': False, 'error': 'PDF path required'})
-        
-        # Check if file exists
-        if not os.path.exists(pdf_path):
-            return jsonify({'success': False, 'error': 'PDF file not found'})
-        
-        # Print using Windows default PDF viewer
-        import subprocess
-        
-        # Get absolute path
-        abs_path = os.path.abspath(pdf_path)
-        
-        # Use Windows shell to print (opens in default PDF viewer and prints)
-        # /p parameter tells Windows to print the file
-        subprocess.Popen(['start', '/wait', '', '/p', abs_path], shell=True)
-        
-        print(f"Sent to printer: {abs_path}")
-        
-        # Log the print action
-        staff_name = data.get('staff_name', 'Unknown')
-        log_settings_access(staff_name, f'Printed PDF: {os.path.basename(pdf_path)}', True, request.remote_addr)
-        
-        return jsonify({
-            'success': True,
-            'message': 'PDF sent to printer',
-            'file': os.path.basename(pdf_path)
-        })
-        
-    except Exception as e:
-        print(f"Error printing PDF: {e}")
-        return jsonify({'success': False, 'error': str(e)})
-
 @app.route('/api/staff-members', methods=['GET', 'POST'])
 def staff_members():
     if request.method == 'POST':
         data = request.json
+        user_name = data.get('user_name', 'Unknown')
+        
         staff = StaffMember(
             name=data['name'],
             color=data['color'],
@@ -1477,6 +2056,11 @@ def staff_members():
         )
         db.session.add(staff)
         db.session.commit()
+        
+        # Log the addition
+        description = f"Added staff member: {staff.name} - Shift {staff.shift} - {staff.color}"
+        log_activity(user_name, 'add', 'staff_member', description, staff.id, request.remote_addr)
+        
         return jsonify({'success': True, 'id': staff.id})
     
     # GET request - return all active staff members
@@ -1497,14 +2081,38 @@ def staff_member(staff_id):
     
     if request.method == 'PUT':
         data = request.json
+        user_name = data.get('user_name', 'Unknown')
+        
+        # Track changes for logging
+        changes = []
+        if 'name' in data and data['name'] != staff.name:
+            changes.append(f"name: {staff.name} → {data['name']}")
+        if 'color' in data and data['color'] != staff.color:
+            changes.append(f"color: {staff.color} → {data['color']}")
+        if 'shift' in data and data['shift'] != staff.shift:
+            changes.append(f"shift: {staff.shift} → {data['shift']}")
+        
         staff.name = data.get('name', staff.name)
         staff.color = data.get('color', staff.color)
         staff.shift = data.get('shift', staff.shift)
         staff.active = data.get('active', staff.active)
         db.session.commit()
+        
+        # Log the modification
+        if changes:
+            description = f"Modified staff member {staff.name}: {', '.join(changes)}"
+            log_activity(user_name, 'modify', 'staff_member', description, staff_id, request.remote_addr)
+        
         return jsonify({'success': True})
     
     elif request.method == 'DELETE':
+        data = request.get_json() or {}
+        user_name = data.get('user_name', 'Unknown')
+        
+        # Log the deletion (soft delete)
+        description = f"Removed staff member: {staff.name} - Shift {staff.shift}"
+        log_activity(user_name, 'delete', 'staff_member', description, staff_id, request.remote_addr)
+        
         # Soft delete - just mark as inactive
         staff.active = False
         db.session.commit()
@@ -1584,6 +2192,10 @@ def change_pin():
     leader.pin = hashlib.sha256(new_pin.encode()).hexdigest()
     db.session.commit()
     
+    # Log the PIN change
+    description = f"Changed PIN for shift leader: {leader.name}"
+    log_activity(leader.name, 'modify', 'pin', description, leader.id, request.remote_addr)
+    
     return jsonify({'success': True, 'message': 'PIN changed successfully'})
 
 def initialize_shift_leaders():
@@ -1621,6 +2233,30 @@ def initialize_shift_leaders():
             
     except Exception as e:
         print(f"Error initializing shift leaders: {e}")
+        db.session.rollback()
+
+def cleanup_old_leave_data():
+    """Delete holiday and sick leave records older than 2 years"""
+    try:
+        two_years_ago = datetime.now().date() - timedelta(days=730)  # 2 years = 730 days
+        
+        # Find old leave records (holiday, sick, off status)
+        old_records = StaffRota.query.filter(
+            StaffRota.date < two_years_ago,
+            StaffRota.status.in_(['holiday', 'sick', 'off'])
+        ).all()
+        
+        if old_records:
+            count = len(old_records)
+            for record in old_records:
+                db.session.delete(record)
+            db.session.commit()
+            print(f"✓ Cleaned up {count} old leave record(s) from before {two_years_ago}")
+        else:
+            print(f"No old leave records to clean up (older than {two_years_ago})")
+            
+    except Exception as e:
+        print(f"Error cleaning up old leave data: {e}")
         db.session.rollback()
 
 def check_missed_reports():
@@ -1774,9 +2410,13 @@ def migrate_database():
                     conn.commit()
                 print("✓ CCTV/Intercom fault detailed fields added successfully!")
         
-        # Create all tables if they don't exist
+        # Create all tables if they don't exist (includes ActivityLog)
         db.create_all()
         print("✓ Tables created/verified successfully!")
+        
+        # Verify ActivityLog table was created
+        if 'activity_log' in inspector.get_table_names():
+            print("✓ ActivityLog table ready for user activity tracking")
         
     except Exception as e:
         print(f"Migration error: {e}")
@@ -1813,6 +2453,13 @@ if __name__ == '__main__':
         check_missed_reports()
         print("=" * 50)
         
+        # Clean up old leave data (older than 2 years)
+        print("=" * 50)
+        print("CLEANING UP OLD LEAVE DATA...")
+        print("=" * 50)
+        cleanup_old_leave_data()
+        print("=" * 50)
+        
         # Schedule daily report using settings
         if settings.email_enabled:
             hour, minute = map(int, settings.email_time.split(':'))
@@ -1823,10 +2470,40 @@ if __name__ == '__main__':
                 minute=minute,
                 id='daily_report'
             )
+        
+        # Schedule daily cleanup of old leave data (runs at 3 AM every day)
+        scheduler.add_job(
+            func=cleanup_old_leave_data,
+            trigger="cron",
+            hour=3,
+            minute=0,
+            id='cleanup_old_leave'
+        )
+        
         scheduler.start()
         
-        # Shut down the scheduler when exiting the app
-        atexit.register(lambda: scheduler.shutdown())
+        # Log application startup
+        log_startup()
+        
+        # Shut down the scheduler and log shutdown when exiting the app
+        def cleanup_on_exit():
+            log_shutdown("Normal shutdown")
+            scheduler.shutdown()
+        
+        atexit.register(cleanup_on_exit)
+        
+        # Handle forced shutdown signals (Ctrl+C, Windows termination, etc.)
+        def handle_shutdown_signal(signum, frame):
+            signal_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+            log_shutdown(f"Signal received: {signal_name}")
+            scheduler.shutdown()
+            sys.exit(0)
+        
+        # Register signal handlers for graceful shutdown
+        signal.signal(signal.SIGINT, handle_shutdown_signal)   # Ctrl+C
+        signal.signal(signal.SIGTERM, handle_shutdown_signal)  # Termination signal
+        if hasattr(signal, 'SIGBREAK'):  # Windows-specific
+            signal.signal(signal.SIGBREAK, handle_shutdown_signal)
     
     # Auto-open browser after server starts
     def open_browser():

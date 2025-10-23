@@ -8,7 +8,7 @@ Werkzeug==2.3.7                 # WSGI web application library (Flask dependency
 
 # Database & ORM
 Flask-SQLAlchemy==3.0.5         # Flask extension for SQLAlchemy
-SQLAlchemy==2.0.21              # SQL toolkit and Object-Relational Mapping
+SQLAlchemy>=2.0.21              # SQL toolkit and Object-Relational Mapping (2.0.44+ for Python 3.13+)
 
 # Task Scheduling
 APScheduler==3.10.4             # Advanced Python Scheduler for automated daily reports
@@ -23,7 +23,7 @@ email-validator==2.0.0          # Email address validation
 python-dateutil==2.8.2          # Extensions to the standard datetime module
 
 # Windows Integration
-pywin32==306                    # Python for Windows extensions (required for PDF printing)
+pywin32>=306                    # Python for Windows extensions (required for PDF printing)
 
 # ========================================
 # Built-in Python modules used (no install needed):
