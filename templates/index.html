@@ -253,6 +253,10 @@
             margin-bottom: 20px;
         }
 
+        .card-minimal-padding {
+            padding: 8px !important;
+        }
+
         .card h3 {
             margin-bottom: 15px;
             color: #495057;
@@ -448,12 +452,33 @@
         }
 
         .temperature-display {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             padding: 20px;
             border-radius: 10px;
             text-align: center;
             margin-bottom: 20px;
+            transition: background 0.3s ease;
+        }
+
+        /* UK Hot Water Safety Temperature Ranges */
+        .temp-danger-cold {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        }
+
+        .temp-warning-low {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+        }
+
+        .temp-safe {
+            background: linear-gradient(135deg, #27ae60 0%, #229954 100%);
+        }
+
+        .temp-warning-hot {
+            background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
+        }
+
+        .temp-danger-hot {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
         }
 
         .temperature-value {
@@ -1096,6 +1121,16 @@
             transform: translateY(-2px);
         }
         
+        .btn-fault-delete {
+            background: #ff7675;
+            color: white;
+        }
+        
+        .btn-fault-delete:hover {
+            background: #d63031;
+            transform: translateY(-2px);
+        }
+        
         .fault-empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -1559,8 +1594,7 @@
         <div id="daily" class="tab-content active">
             
             <!-- Staff Schedule for Today -->
-            <div class="card card-spaced">
-                <h3>Today's Staff Schedule</h3>
+            <div class="card card-spaced card-minimal-padding">
                 <div id="todaySchedule" class="loading">Loading...</div>
             </div>
             
@@ -3227,6 +3261,9 @@
                         <button class="btn-fault-action btn-fault-reopen" onclick="updateFaultStatus(${fault.id}, 'open')">
                             ↩ Reopen
                         </button>
+                        <button class="btn-fault-action btn-fault-delete" onclick="deleteFault(${fault.id})">
+                            🗑️ Delete
+                        </button>
                     `;
                 }
                 
@@ -3413,6 +3450,27 @@
             });
         }
 
+        function deleteFault(faultId) {
+            if (confirm('Are you sure you want to permanently delete this closed fault?')) {
+                fetch(`/api/delete-fault/${faultId}`, {
+                    method: 'DELETE',
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showAlert('Fault deleted successfully!', 'success');
+                        loadCCTVFaults();
+                    } else {
+                        showAlert(data.error || 'Failed to delete fault', 'danger');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting fault:', error);
+                    showAlert('Error deleting fault', 'danger');
+                });
+            }
+        }
+
         // Water Temperature
         document.getElementById('tempForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -3467,11 +3525,36 @@
                 const currentTempContainer = document.getElementById('currentTemp');
                 if (data.length > 0) {
                     const latest = data[0];
+                    const temp = parseFloat(latest.temperature);
+                    
+                    // Determine color class based on UK hot water safety regulations
+                    let tempClass = '';
+                    let safetyMessage = '';
+                    
+                    if (temp < 50) {
+                        tempClass = 'temp-danger-cold';
+                        safetyMessage = '⚠️ Below safe temperature - Legionella risk';
+                    } else if (temp >= 50 && temp <= 65) {
+                        tempClass = 'temp-safe';
+                        safetyMessage = '✓ Safe temperature range';
+                    } else if (temp > 65 && temp <= 70) {
+                        tempClass = 'temp-warning-hot';
+                        safetyMessage = '⚠️ High temperature - scalding risk';
+                    } else {
+                        tempClass = 'temp-danger-hot';
+                        safetyMessage = '⚠️ Danger - Very high scalding risk';
+                    }
+                    
+                    // Apply color class to container
+                    currentTempContainer.className = `temperature-display ${tempClass}`;
+                    
                     currentTempContainer.innerHTML = `
                         <div class="temperature-value">${latest.temperature}°C</div>
                         <div class="temperature-time">Last recorded: ${new Date(latest.timestamp).toLocaleString()}</div>
+                        <div style="margin-top: 10px; font-size: 0.9em; font-weight: 500;">${safetyMessage}</div>
                     `;
                 } else {
+                    currentTempContainer.className = 'temperature-display';
                     currentTempContainer.innerHTML = '<div class="loading">No temperature data available</div>';
                 }
             });

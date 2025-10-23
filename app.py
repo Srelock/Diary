@@ -41,7 +41,7 @@ db = SQLAlchemy(app)
 # Database Models
 class DailyOccurrence(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=datetime.now)
     time = db.Column(db.String(10), nullable=False)
     flat_number = db.Column(db.String(20), nullable=False)
     reported_by = db.Column(db.String(100), nullable=False)
@@ -59,7 +59,7 @@ class StaffRota(db.Model):
 
 class CCTVFault(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=datetime.now)
     fault_type = db.Column(db.String(50), nullable=False)  # CCTV or Intercom
     flat_number = db.Column(db.String(20), nullable=False)
     block_number = db.Column(db.String(20))
@@ -73,13 +73,13 @@ class CCTVFault(db.Model):
 
 class WaterTemperature(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=datetime.now)
     temperature = db.Column(db.Float, nullable=False)
     time_recorded = db.Column(db.String(5), nullable=False)  # Format: HH:MM
 
 class EmailLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    sent_date = db.Column(db.DateTime, default=datetime.utcnow)
+    sent_date = db.Column(db.DateTime, default=datetime.now)
     recipient = db.Column(db.String(200), nullable=False)
     subject = db.Column(db.String(200), nullable=False)
     pdf_path = db.Column(db.String(500), nullable=False)
@@ -94,7 +94,7 @@ class ScheduleSettings(db.Model):
     sender_password = db.Column(db.String(200), default='')
     smtp_server = db.Column(db.String(200), default='smtp.gmail.com')
     smtp_port = db.Column(db.Integer, default=587)
-    last_updated = db.Column(db.DateTime, default=datetime.utcnow)
+    last_updated = db.Column(db.DateTime, default=datetime.now)
 
 class StaffMember(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -108,12 +108,12 @@ class ShiftLeader(db.Model):
     name = db.Column(db.String(100), nullable=False, unique=True)
     pin = db.Column(db.String(100), nullable=False)  # Store hashed PIN
     active = db.Column(db.Boolean, default=True)
-    created_date = db.Column(db.DateTime, default=datetime.utcnow)
+    created_date = db.Column(db.DateTime, default=datetime.now)
     last_login = db.Column(db.DateTime)
 
 class ActivityLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=datetime.now)
     user_name = db.Column(db.String(100), nullable=False)  # Shift leader name
     action_type = db.Column(db.String(50), nullable=False)  # e.g., 'delete', 'modify', 'add'
     entity_type = db.Column(db.String(50), nullable=False)  # e.g., 'occurrence', 'staff', 'settings'
@@ -1584,10 +1584,23 @@ def update_fault_status():
     if fault:
         fault.status = data['status']
         if data['status'] == 'closed':
-            fault.resolved_date = datetime.utcnow()
+            fault.resolved_date = datetime.now()
         db.session.commit()
         return jsonify({'success': True})
     return jsonify({'success': False})
+
+@app.route('/api/delete-fault/<int:fault_id>', methods=['DELETE'])
+def delete_fault(fault_id):
+    fault = CCTVFault.query.get(fault_id)
+    if fault:
+        # Only allow deletion of closed faults
+        if fault.status == 'closed':
+            db.session.delete(fault)
+            db.session.commit()
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'Only closed faults can be deleted'})
+    return jsonify({'success': False, 'error': 'Fault not found'})
 
 @app.route('/api/test-export', methods=['POST'])
 def test_export():
@@ -1875,7 +1888,7 @@ def verify_settings_pin():
         for shift_leader in all_leaders:
             if shift_leader.pin == pin_hash:
                 # Success - found matching PIN
-                shift_leader.last_login = datetime.utcnow()
+                shift_leader.last_login = datetime.now()
                 db.session.commit()
                 
                 log_settings_access(shift_leader.name, 'Settings Access Granted', True, request.remote_addr)
@@ -1984,7 +1997,7 @@ def schedule_settings():
         if 'smtp_port' in data:
             settings.smtp_port = int(data['smtp_port'])
             
-        settings.last_updated = datetime.utcnow()
+        settings.last_updated = datetime.now()
         
         db.session.commit()
         
@@ -2140,7 +2153,7 @@ def verify_pin():
         return jsonify({'success': False, 'error': 'Invalid PIN'}), 401
     
     # Update last login time
-    leader.last_login = datetime.utcnow()
+    leader.last_login = datetime.now()
     db.session.commit()
     
     return jsonify({
