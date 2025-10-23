@@ -259,6 +259,13 @@
             font-size: 1.2em;
         }
 
+        #todayDateHeader {
+            text-align: center;
+            font-size: 2em;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
         .alert {
             padding: 15px;
             border-radius: 8px;
@@ -1538,7 +1545,6 @@
     <div class="container">
         <div class="header">
             <h1>Building Management Diary</h1>
-            <p>Daily Operations, 3-Shift Staff Rota, Faults & Temperature Monitoring</p>
         </div>
 
         <div class="nav-tabs">
@@ -1551,7 +1557,6 @@
 
         <!-- Daily Occurrences Tab -->
         <div id="daily" class="tab-content active">
-            <h2>Daily Occurrences</h2>
             
             <!-- Staff Schedule for Today -->
             <div class="card card-spaced">
@@ -1560,7 +1565,7 @@
             </div>
             
             <div class="card">
-                <h3>Today's Occurrences</h3>
+                <h3 id="todayDateHeader"></h3>
                 <div id="dailyList" class="loading">Loading...</div>
             </div>
         </div>
@@ -2273,8 +2278,19 @@
                 });
         }
 
+        // Set today's date header
+        function setTodayDateHeader() {
+            const today = new Date();
+            const options = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+            const dateString = today.toLocaleDateString('en-GB', options);
+            // Format: "Saturday, 23 October 2025" - remove the comma after weekday
+            const formattedDate = dateString.replace(',', '');
+            document.getElementById('todayDateHeader').textContent = formattedDate;
+        }
+
         // Initialize the application
         document.addEventListener('DOMContentLoaded', function() {
+            setTodayDateHeader();
             loadDailyOccurrences();
             loadTodaySchedule();
             loadStaffMembers();
