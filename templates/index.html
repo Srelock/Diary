@@ -197,6 +197,31 @@
             background: #f8f9fa;
         }
 
+        /* Table wrapper for horizontal scrolling on mobile */
+        .table-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin: 15px 0;
+        }
+
+        .table-wrapper::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .table-wrapper::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .table-wrapper::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+
+        .table-wrapper::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
         .status-badge {
             padding: 4px 12px;
             border-radius: 20px;
@@ -1463,22 +1488,139 @@
         }
 
         @media (max-width: 768px) {
+            /* General mobile optimizations */
+            body {
+                padding: 10px;
+            }
+
+            .container {
+                border-radius: 10px;
+            }
+
+            /* Header adjustments */
+            .header {
+                padding: 20px 15px;
+            }
+
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .header p {
+                font-size: 0.95em;
+            }
+
+            /* Navigation tabs */
             .nav-tabs {
-                flex-direction: column;
+                flex-wrap: wrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
             }
             
             .nav-tab {
+                padding: 15px 10px;
+                font-size: 0.9em;
+                min-width: 120px;
                 border-bottom: 1px solid #dee2e6;
-                border-right: none;
+            }
+
+            /* Tab content */
+            .tab-content {
+                padding: 15px;
+                min-height: 400px;
+            }
+
+            .tab-content h2 {
+                font-size: 1.5em;
+                margin-bottom: 15px;
+            }
+
+            .tab-content h3 {
+                font-size: 1.2em;
+                margin-bottom: 10px;
             }
             
+            /* Grid layouts */
             .grid {
                 grid-template-columns: 1fr;
+                gap: 15px;
             }
-            
+
+            /* Cards */
+            .card {
+                padding: 15px;
+                border-radius: 10px;
+            }
+
+            .card h3 {
+                font-size: 1.1em;
+            }
+
+            /* Forms */
+            .form-group {
+                margin-bottom: 15px;
+            }
+
+            .form-group label {
+                font-size: 0.95em;
+                margin-bottom: 6px;
+            }
+
+            .form-group input,
+            .form-group textarea,
+            .form-group select {
+                font-size: 16px; /* Prevents zoom on iOS */
+                padding: 12px;
+                border-radius: 8px;
+            }
+
+            .form-group textarea {
+                min-height: 100px;
+            }
+
+            /* Buttons */
+            .btn,
+            button[type="submit"] {
+                padding: 12px 20px;
+                font-size: 1em;
+                border-radius: 8px;
+                min-height: 44px; /* Touch-friendly size */
+            }
+
+            .btn-danger,
+            .btn-secondary {
+                padding: 10px 16px;
+                font-size: 0.9em;
+                min-height: 40px;
+            }
+
+            /* Tables - horizontal scroll */
+            .table-container {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                margin: 0 -15px;
+                padding: 0 15px;
+            }
+
+            table {
+                font-size: 0.9em;
+                min-width: 100%;
+            }
+
+            table th,
+            table td {
+                padding: 10px 8px;
+                white-space: nowrap;
+            }
+
+            table th {
+                font-size: 0.85em;
+            }
+
+            /* Rota specific */
             .rota-legend {
                 grid-template-columns: 1fr;
-                gap: 15px;
+                gap: 10px;
             }
             
             .schedule-container {
@@ -1487,21 +1629,27 @@
             }
             
             .rota-table {
-                font-size: 0.85em;
+                font-size: 0.8em;
             }
-            
+
+            .rota-table th,
+            .rota-table td {
+                padding: 8px 4px;
+            }
+
+            /* Faults section */
             .faults-grid {
                 grid-template-columns: 1fr;
-                gap: 20px;
+                gap: 15px;
             }
             
             .fault-report-card,
             .fault-log-card {
-                border-radius: 12px;
+                border-radius: 10px;
             }
             
             .fault-form {
-                padding: 20px;
+                padding: 15px;
             }
             
             .fault-form > div[style*="grid-template-columns"] {
@@ -1509,62 +1657,206 @@
             }
             
             .fault-list {
-                padding: 15px;
+                padding: 10px;
                 max-height: 400px;
             }
             
             .fault-item {
-                padding: 15px;
+                padding: 12px;
+                margin-bottom: 10px;
             }
             
             .fault-item-header {
                 flex-direction: column;
-                gap: 10px;
+                gap: 8px;
+                align-items: flex-start;
             }
             
             .fault-actions {
                 flex-direction: column;
                 width: 100%;
+                gap: 8px;
             }
             
             .btn-fault-action {
                 width: 100%;
+                min-height: 40px;
             }
             
             .fault-stats {
                 flex-direction: column;
-                gap: 8px;
+                gap: 6px;
             }
             
             .fault-search-bar {
-                padding: 15px;
+                padding: 12px;
             }
             
             .fault-search-input {
-                font-size: 0.95em;
+                font-size: 16px;
+                padding: 12px;
             }
             
             .fault-filter-bar {
                 flex-direction: column;
-                gap: 15px;
-                padding: 15px;
+                gap: 12px;
+                padding: 12px;
             }
             
             .fault-filter-buttons {
                 width: 100%;
                 justify-content: center;
+                flex-wrap: wrap;
             }
             
             .fault-filter-btn {
                 flex: 1;
-                min-width: 100px;
-                padding: 8px 12px;
+                min-width: 90px;
+                padding: 10px;
                 font-size: 0.85em;
+                min-height: 40px;
             }
             
             .btn-print-faults {
                 width: 100%;
                 justify-content: center;
+            }
+
+            /* Staff management */
+            .staff-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .staff-list {
+                padding: 10px;
+            }
+
+            /* Settings */
+            .settings-grid {
+                grid-template-columns: 1fr;
+            }
+
+            /* Temperature tab */
+            #tempStats {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            #tempHistory {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            /* Date range selectors */
+            .date-range-container {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .date-range-container input[type="date"] {
+                font-size: 16px;
+                padding: 12px;
+            }
+
+            /* Alerts */
+            .alert {
+                padding: 12px;
+                font-size: 0.95em;
+                margin-bottom: 15px;
+                border-radius: 8px;
+            }
+
+            /* Occurrence list */
+            #occurrenceList {
+                padding: 10px;
+            }
+
+            .occurrence-item {
+                padding: 12px;
+                margin-bottom: 10px;
+                border-radius: 8px;
+            }
+
+            /* Modal improvements */
+            .modal {
+                padding: 10px;
+            }
+
+            .modal-content {
+                width: 95%;
+                max-width: 95%;
+                margin: 10px auto;
+                padding: 15px;
+                border-radius: 10px;
+            }
+
+            /* Schedule settings */
+            #scheduleList {
+                padding: 10px;
+            }
+
+            .schedule-item {
+                padding: 12px;
+                margin-bottom: 10px;
+            }
+
+            /* Print button adjustments */
+            .print-section {
+                margin-top: 15px;
+            }
+
+            .print-section button {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+        }
+
+        /* Extra small devices (phones in portrait) */
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 1.5em;
+            }
+
+            .header p {
+                font-size: 0.85em;
+            }
+
+            .nav-tab {
+                padding: 12px 8px;
+                font-size: 0.85em;
+                min-width: 100px;
+            }
+
+            .tab-content {
+                padding: 10px;
+            }
+
+            .card {
+                padding: 12px;
+            }
+
+            .form-group input,
+            .form-group textarea,
+            .form-group select {
+                font-size: 16px;
+                padding: 10px;
+            }
+
+            .btn {
+                padding: 10px 16px;
+                font-size: 0.95em;
+            }
+
+            table {
+                font-size: 0.85em;
+            }
+
+            .rota-table {
+                font-size: 0.75em;
+            }
+
+            .fault-item {
+                padding: 10px;
             }
         }
         
@@ -1573,6 +1865,120 @@
             0%, 100% { transform: translateX(0); }
             10%, 30%, 50%, 70%, 90% { transform: translateX(-10px); }
             20%, 40%, 60%, 80% { transform: translateX(10px); }
+        }
+
+        /* Touch-friendly improvements for all devices */
+        * {
+            -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+        }
+
+        /* Smooth scrolling for better mobile experience */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        /* Better focus states for mobile */
+        input:focus,
+        textarea:focus,
+        select:focus,
+        button:focus {
+            outline: 2px solid #007bff;
+            outline-offset: 2px;
+        }
+
+        /* Prevent text selection on buttons */
+        button,
+        .nav-tab,
+        .btn {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        /* Mobile occurrence cards */
+        .mobile-occurrence-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .mobile-occurrence-form {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            border: 2px solid #28a745;
+        }
+
+        .mobile-occurrence-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .mobile-occurrence-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            border-left: 4px solid #007bff;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .mobile-occurrence-card:active {
+            transform: scale(0.98);
+        }
+
+        .mobile-occurrence-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .mobile-occurrence-time {
+            font-size: 1.3em;
+            font-weight: bold;
+        }
+
+        .mobile-occurrence-header .btn-danger {
+            background: white;
+            color: #dc3545;
+            border: none;
+            padding: 8px 16px;
+            font-weight: 600;
+        }
+
+        .mobile-occurrence-header .btn-danger:hover {
+            background: #f8f9fa;
+        }
+
+        .mobile-occurrence-body {
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .mobile-occurrence-field {
+            font-size: 0.95em;
+            line-height: 1.5;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .mobile-occurrence-field:last-child {
+            border-bottom: none;
+        }
+
+        .mobile-occurrence-field strong {
+            color: #495057;
+            font-weight: 600;
+            display: inline-block;
+            min-width: 100px;
         }
     </style>
 </head>
@@ -2349,6 +2755,21 @@
                     displayFaults(currentFaultFilter);
                 });
             }
+            
+            // Reload occurrences on window resize to switch between mobile/desktop layout
+            let resizeTimer;
+            let lastWidth = window.innerWidth;
+            window.addEventListener('resize', function() {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(function() {
+                    const currentWidth = window.innerWidth;
+                    // Only reload if crossing the 768px breakpoint
+                    if ((lastWidth <= 768 && currentWidth > 768) || (lastWidth > 768 && currentWidth <= 768)) {
+                        loadDailyOccurrences();
+                        lastWidth = currentWidth;
+                    }
+                }, 250);
+            });
         });
         
         // Staff Management Functions
@@ -2794,31 +3215,94 @@
             .then(response => response.json())
             .then(data => {
                 const container = document.getElementById('dailyList');
+                const isMobile = window.innerWidth <= 768;
                 
-                let html = '<table class="incident-table"><thead><tr><th>TIME</th><th>FLAT</th><th>BY</th><th>INCIDENT REPORT</th><th>ACTIONS</th></tr></thead><tbody>';
-                
-                // Add empty row for new entry
-                html += `<tr id="newRow">
-                    <td><input type="time" id="new_time" placeholder="Time"></td>
-                    <td><input type="text" id="new_flat" placeholder="Flat (optional)"></td>
-                    <td><input type="text" id="new_reported_by" placeholder="Name *"></td>
-                    <td><input type="text" id="new_description" placeholder="Incident details... *"></td>
-                    <td><button class="btn btn-success btn-sm" onclick="addNewOccurrence()">Add</button></td>
-                </tr>`;
-                
-                // Add existing occurrences
-                data.forEach(occurrence => {
-                    html += `<tr id="row_${occurrence.id}">
-                        <td>${occurrence.time}</td>
-                        <td>${occurrence.flat_number}</td>
-                        <td>${occurrence.reported_by}</td>
-                        <td>${occurrence.description}</td>
-                        <td><button class="btn btn-danger btn-sm" onclick="deleteOccurrence(${occurrence.id})">Delete</button></td>
+                if (isMobile) {
+                    // Mobile card layout
+                    let html = '<div class="mobile-occurrence-container">';
+                    
+                    // Add form for new entry
+                    html += `
+                        <div class="mobile-occurrence-form">
+                            <h4 style="margin-bottom: 15px; color: #495057;">Add New Entry</h4>
+                            <div class="form-group">
+                                <label>Time</label>
+                                <input type="time" id="new_time" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Flat</label>
+                                <input type="text" id="new_flat" placeholder="Flat number (optional)" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Reported By *</label>
+                                <input type="text" id="new_reported_by" placeholder="Name" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Incident Details *</label>
+                                <input type="text" id="new_description" placeholder="Enter incident details..." class="form-control">
+                            </div>
+                            <button class="btn btn-success" style="width: 100%;" onclick="addNewOccurrence()">Add Entry</button>
+                        </div>
+                    `;
+                    
+                    // Add existing occurrences as cards
+                    if (data.length > 0) {
+                        html += '<div class="mobile-occurrence-list">';
+                        data.forEach(occurrence => {
+                            html += `
+                                <div class="mobile-occurrence-card" id="row_${occurrence.id}">
+                                    <div class="mobile-occurrence-header">
+                                        <span class="mobile-occurrence-time">${occurrence.time}</span>
+                                        <button class="btn btn-danger btn-sm" onclick="deleteOccurrence(${occurrence.id})">Delete</button>
+                                    </div>
+                                    <div class="mobile-occurrence-body">
+                                        <div class="mobile-occurrence-field">
+                                            <strong>Flat:</strong> ${occurrence.flat_number}
+                                        </div>
+                                        <div class="mobile-occurrence-field">
+                                            <strong>Reported By:</strong> ${occurrence.reported_by}
+                                        </div>
+                                        <div class="mobile-occurrence-field">
+                                            <strong>Incident:</strong> ${occurrence.description}
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        html += '</div>';
+                    } else {
+                        html += '<p style="text-align: center; color: #666; padding: 20px;">No entries for today</p>';
+                    }
+                    
+                    html += '</div>';
+                    container.innerHTML = html;
+                } else {
+                    // Desktop table layout
+                    let html = '<table class="incident-table"><thead><tr><th>TIME</th><th>FLAT</th><th>BY</th><th>INCIDENT REPORT</th><th>ACTIONS</th></tr></thead><tbody>';
+                    
+                    // Add empty row for new entry
+                    html += `<tr id="newRow">
+                        <td><input type="time" id="new_time" placeholder="Time"></td>
+                        <td><input type="text" id="new_flat" placeholder="Flat (optional)"></td>
+                        <td><input type="text" id="new_reported_by" placeholder="Name *"></td>
+                        <td><input type="text" id="new_description" placeholder="Incident details... *"></td>
+                        <td><button class="btn btn-success btn-sm" onclick="addNewOccurrence()">Add</button></td>
                     </tr>`;
-                });
-                
-                html += '</tbody></table>';
-                container.innerHTML = html;
+                    
+                    // Add existing occurrences
+                    data.forEach(occurrence => {
+                        html += `<tr id="row_${occurrence.id}">
+                            <td>${occurrence.time}</td>
+                            <td>${occurrence.flat_number}</td>
+                            <td>${occurrence.reported_by}</td>
+                            <td>${occurrence.description}</td>
+                            <td><button class="btn btn-danger btn-sm" onclick="deleteOccurrence(${occurrence.id})">Delete</button></td>
+                        </tr>`;
+                    });
+                    
+                    html += '</tbody></table>';
+                    container.innerHTML = html;
+                }
                 
                 // Setup auto-time fill for new row
                 setupNewRowAutoTime();
@@ -3708,11 +4192,37 @@
                 html += `<tr>
                     <td style="white-space: nowrap;">${date.toLocaleDateString()}</td>
                     <td style="font-weight: 600;">${temp.time_recorded}</td>
-                    <td style="font-size: 1.1em; color: #007bff;"><strong>${temp.temperature}°C</strong></td>
+                    <td style="font-size: 1.1em; color: #007bff; cursor: pointer; user-select: none;" 
+                        onclick="deleteWaterTemp(${temp.id}, '${temp.temperature}°C', '${date.toLocaleDateString()}', '${temp.time_recorded}')" 
+                        title="Click to delete this entry">
+                        <strong>${temp.temperature}°C</strong>
+                    </td>
                 </tr>`;
             });
             html += '</tbody></table>';
             historyContainer.innerHTML = html;
+        }
+        
+        function deleteWaterTemp(id, temperature, date, time) {
+            if (!confirm(`Delete this water temperature reading?\n\n${temperature} recorded on ${date} at ${time}\n\nThis action cannot be undone.`)) {
+                return;
+            }
+            
+            fetch(`/api/water-temperature/${id}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert('Temperature record deleted successfully', 'success');
+                    loadWaterTemperature();
+                } else {
+                    showAlert('Error: ' + (data.error || 'Failed to delete temperature record'), 'danger');
+                }
+            })
+            .catch(error => {
+                showAlert('Error deleting temperature record: ' + error, 'danger');
+            });
         }
 
         // Settings Management

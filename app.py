@@ -1577,6 +1577,17 @@ def water_temperature():
         'time_recorded': t.time_recorded
     } for t in temps])
 
+@app.route('/api/water-temperature/<int:temp_id>', methods=['DELETE'])
+def delete_water_temperature(temp_id):
+    """Delete a water temperature record"""
+    temp = WaterTemperature.query.get(temp_id)
+    if not temp:
+        return jsonify({'success': False, 'error': 'Temperature record not found'}), 404
+    
+    db.session.delete(temp)
+    db.session.commit()
+    return jsonify({'success': True})
+
 @app.route('/api/update-fault-status', methods=['POST'])
 def update_fault_status():
     data = request.json
