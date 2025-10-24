@@ -1332,7 +1332,7 @@ def staff_rota_range():
 def porter_rota():
     """Get porter rota schedule based on 4-week rotation pattern"""
     start_date = request.args.get('start_date', datetime.now().date().isoformat())
-    end_date = request.args.get('end_date', (datetime.now() + timedelta(days=90)).date().isoformat())
+    end_date = request.args.get('end_date', (datetime.now() + timedelta(days=365)).date().isoformat())
     
     start = datetime.strptime(start_date, '%Y-%m-%d').date()
     end = datetime.strptime(end_date, '%Y-%m-%d').date()
