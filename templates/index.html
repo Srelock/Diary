@@ -2585,7 +2585,7 @@
             <!-- Rota Navigation -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
                 <button class="btn btn-primary" onclick="navigateRotaPrevious()" style="padding: 10px 20px;">
-                    ◄ Previous 3 Months
+                    ◄ Previous 6 Months
                 </button>
                 <div style="text-align: center;">
                     <div id="rotaDateRange" style="font-weight: 600; font-size: 1.1em; color: #333;">Loading...</div>
@@ -2594,7 +2594,7 @@
                     </button>
                 </div>
                 <button class="btn btn-primary" onclick="navigateRotaNext()" style="padding: 10px 20px;">
-                    Next 3 Months ►
+                    Next 6 Months ►
                 </button>
             </div>
             
@@ -4001,11 +4001,11 @@
         let currentRotaEndDate = null;
         
         function loadPorterRota(startDate = null, endDate = null) {
-            // If no dates provided, load 3 months from today
+            // If no dates provided, load 6 months from today
             if (!startDate || !endDate) {
                 const today = new Date();
                 startDate = today.toISOString().split('T')[0];
-                endDate = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                endDate = new Date(today.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             }
             
             // Store current viewing range
@@ -4184,9 +4184,9 @@
         function navigateRotaPrevious() {
             if (!currentRotaStartDate) return;
             
-            // Go back 3 months (90 days)
+            // Go back 6 months (180 days)
             const startDateObj = new Date(currentRotaStartDate);
-            const newStartDate = new Date(startDateObj.getTime() - 90 * 24 * 60 * 60 * 1000);
+            const newStartDate = new Date(startDateObj.getTime() - 180 * 24 * 60 * 60 * 1000);
             const newEndDate = new Date(startDateObj.getTime() - 1 * 24 * 60 * 60 * 1000); // Day before current start
             
             loadPorterRota(newStartDate.toISOString().split('T')[0], newEndDate.toISOString().split('T')[0]);
@@ -4196,10 +4196,10 @@
         function navigateRotaNext() {
             if (!currentRotaEndDate) return;
             
-            // Go forward 3 months (90 days)
+            // Go forward 6 months (180 days)
             const endDateObj = new Date(currentRotaEndDate);
             const newStartDate = new Date(endDateObj.getTime() + 1 * 24 * 60 * 60 * 1000); // Day after current end
-            const newEndDate = new Date(endDateObj.getTime() + 90 * 24 * 60 * 60 * 1000);
+            const newEndDate = new Date(endDateObj.getTime() + 180 * 24 * 60 * 60 * 1000);
             
             loadPorterRota(newStartDate.toISOString().split('T')[0], newEndDate.toISOString().split('T')[0]);
             loadLeaveData(); // Update leave data to match new date range
@@ -5198,7 +5198,7 @@
         }
         
         function loadLeaveData() {
-            // Use current rota viewing range if available, otherwise default to today + 90 days
+            // Use current rota viewing range if available, otherwise default to today + 180 days
             let startDate, endDate;
             if (currentRotaStartDate && currentRotaEndDate) {
                 startDate = currentRotaStartDate;
@@ -5206,7 +5206,7 @@
             } else {
                 const today = new Date().toISOString().split('T')[0];
                 const futureDate = new Date();
-                futureDate.setDate(futureDate.getDate() + 90);
+                futureDate.setDate(futureDate.getDate() + 180);
                 startDate = today;
                 endDate = futureDate.toISOString().split('T')[0];
             }
