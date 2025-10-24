@@ -16,7 +16,7 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
             min-height: 100vh;
             padding: 20px;
         }
@@ -1980,6 +1980,552 @@
             display: inline-block;
             min-width: 100px;
         }
+
+        /* Dark Mode Styles */
+        body.dark-mode {
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+        }
+
+        body.dark-mode .container {
+            background: #2a2a2a;
+            color: #e8e8e8;
+        }
+
+        body.dark-mode .header {
+            background: linear-gradient(135deg, #1f1f1f 0%, #2a2a2a 100%);
+        }
+
+        body.dark-mode .nav-tabs {
+            background: #1f1f1f;
+            border-bottom-color: #404040;
+        }
+
+        body.dark-mode .nav-tab {
+            color: #b0b0b0;
+        }
+
+        body.dark-mode .nav-tab:hover {
+            background: #2a2a2a;
+            color: #e8e8e8;
+        }
+
+        body.dark-mode .nav-tab.active {
+            background: #2a2a2a;
+            color: #ffffff;
+            border-bottom-color: #6c757d;
+        }
+
+        body.dark-mode .card {
+            background: #333333;
+            border-color: #404040;
+            color: #e8e8e8;
+        }
+
+        body.dark-mode .card h3 {
+            color: #ffffff;
+        }
+
+        body.dark-mode .form-control {
+            background: #1f1f1f;
+            border-color: #404040;
+            color: #ffffff;
+        }
+
+        body.dark-mode .form-control:focus {
+            background: #2a2a2a;
+            border-color: #6c757d;
+            color: #ffffff;
+        }
+
+        body.dark-mode .form-group label {
+            color: #e8e8e8;
+        }
+
+        body.dark-mode .form-text {
+            color: #b0b0b0;
+        }
+
+        body.dark-mode .btn {
+            border-color: #404040;
+        }
+
+        body.dark-mode .btn-primary {
+            background: #6c757d;
+            color: #ffffff;
+        }
+
+        body.dark-mode .btn-primary:hover {
+            background: #5a6268;
+        }
+
+        body.dark-mode .btn-success {
+            background: #28a745;
+        }
+
+        body.dark-mode .btn-danger {
+            background: #dc3545;
+        }
+
+        body.dark-mode .btn-warning {
+            background: #ffc107;
+            color: #1f1f1f;
+        }
+
+        body.dark-mode table {
+            color: #ffffff;
+        }
+
+        body.dark-mode table thead {
+            background: #1f1f1f;
+            color: #ffffff;
+        }
+
+        body.dark-mode table tbody tr {
+            border-bottom-color: #404040;
+            background: #333333;
+        }
+
+        body.dark-mode table tbody tr:hover {
+            background: #3a3a3a;
+        }
+
+        body.dark-mode table tbody td {
+            color: #ffffff;
+        }
+
+        body.dark-mode .occurrence-item {
+            background: #333333;
+            border-color: #404040;
+            color: #ffffff;
+        }
+
+        body.dark-mode .occurrence-item:hover {
+            background: #3a3a3a;
+        }
+
+        body.dark-mode .loading {
+            color: #b0b0b0;
+        }
+
+        body.dark-mode select {
+            background: #1f1f1f;
+            border-color: #404040;
+            color: #ffffff;
+        }
+
+        body.dark-mode textarea {
+            background: #1f1f1f;
+            border-color: #404040;
+            color: #ffffff;
+        }
+
+        body.dark-mode .shift-row {
+            border-color: #404040;
+            background: #333333;
+            color: #ffffff;
+        }
+
+        body.dark-mode small {
+            color: #b0b0b0;
+        }
+
+        body.dark-mode code {
+            background: #1f1f1f;
+            color: #e8e8e8;
+        }
+
+        body.dark-mode hr {
+            border-color: #404040;
+        }
+
+        body.dark-mode .grid {
+            gap: 20px;
+        }
+
+        body.dark-mode input[type="text"],
+        body.dark-mode input[type="time"],
+        body.dark-mode input[type="date"],
+        body.dark-mode input[type="email"],
+        body.dark-mode input[type="password"],
+        body.dark-mode input[type="number"] {
+            background: #1f1f1f;
+            border-color: #404040;
+            color: #ffffff;
+        }
+
+        body.dark-mode input::placeholder {
+            color: #808080;
+        }
+
+        body.dark-mode .staff-name-text {
+            color: #ffffff;
+        }
+
+        body.dark-mode h2,
+        body.dark-mode h3,
+        body.dark-mode h4 {
+            color: #ffffff;
+        }
+
+        /* Toggle Switch Styling */
+        #darkModeToggle {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 50px;
+            height: 25px;
+            background: #ccc;
+            border-radius: 25px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin: 0;
+        }
+
+        #darkModeToggle:checked {
+            background: #4da8ff;
+        }
+
+        #darkModeToggle::before {
+            content: '';
+            position: absolute;
+            width: 21px;
+            height: 21px;
+            border-radius: 50%;
+            background: white;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        #darkModeToggle:checked::before {
+            transform: translateX(25px);
+        }
+
+        body.dark-mode #darkModeToggle {
+            background: #404040;
+        }
+
+        body.dark-mode #darkModeToggle:checked {
+            background: #6c757d;
+        }
+
+        /* Additional dark mode improvements */
+        body.dark-mode .tab-content {
+            color: #e8e8e8;
+        }
+
+        body.dark-mode p {
+            color: #e8e8e8;
+        }
+
+        body.dark-mode strong {
+            color: #ffffff;
+        }
+
+        body.dark-mode .fault-item {
+            background: #333333;
+            border-color: #404040;
+            color: #ffffff;
+        }
+
+        body.dark-mode .fault-item:hover {
+            background: #3a3a3a;
+        }
+
+        /* Date header in dark mode */
+        body.dark-mode #todayDateHeader {
+            color: #ffffff;
+        }
+
+        /* Fix white boxes in incident table */
+        body.dark-mode .incident-table {
+            background: #2a2a2a;
+        }
+
+        body.dark-mode .incident-table th {
+            background: #1f1f1f;
+            color: #ffffff;
+            border-bottom-color: #404040;
+        }
+
+        body.dark-mode .incident-table td {
+            background: #2a2a2a;
+            border-color: #404040;
+            color: #ffffff;
+        }
+
+        body.dark-mode .incident-table tbody tr:hover td {
+            background: #333333;
+        }
+
+        /* Fix schedule boxes and other light backgrounds */
+        body.dark-mode .shift-box {
+            background: #333333;
+            border-color: #404040;
+        }
+
+        body.dark-mode .staff-member {
+            border-bottom-color: #404040;
+        }
+
+        body.dark-mode .staff-name {
+            color: #ffffff;
+        }
+
+        body.dark-mode .shift-title {
+            background: #1f1f1f;
+            color: #ffffff;
+        }
+
+        body.dark-mode .schedule-container {
+            background: transparent;
+        }
+
+        /* Staff Rota Dark Mode */
+        body.dark-mode .rota-subtitle {
+            color: #b0b0b0;
+        }
+
+        body.dark-mode .rota-calendar {
+            background: #2a2a2a;
+        }
+
+        body.dark-mode .rota-table thead th {
+            background: #1f1f1f;
+            color: #ffffff;
+            border-color: #404040;
+        }
+
+        body.dark-mode .rota-table td {
+            background: #333333;
+            border-color: #404040;
+            color: #ffffff;
+        }
+
+        body.dark-mode .rota-date-cell,
+        body.dark-mode .rota-day-cell,
+        body.dark-mode .rota-week-cell,
+        body.dark-mode .rota-staff-cell {
+            color: #ffffff;
+        }
+
+        body.dark-mode .legend-section {
+            background: #333333;
+            border-color: #404040;
+        }
+
+        body.dark-mode .legend-item {
+            background: #2a2a2a;
+            border-color: #404040;
+            color: #ffffff;
+        }
+
+        /* CCTV/Fault Pages Dark Mode */
+        body.dark-mode .fault-report-card,
+        body.dark-mode .fault-log-card {
+            background: #333333;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        body.dark-mode .fault-card-header {
+            background: linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 100%);
+        }
+
+        body.dark-mode .fault-form {
+            background: #333333;
+        }
+
+        body.dark-mode .fault-input {
+            background: #1f1f1f;
+            border-color: #404040;
+            color: #ffffff;
+        }
+
+        body.dark-mode .fault-input:focus {
+            background: #2a2a2a;
+            border-color: #6c757d;
+        }
+
+        body.dark-mode .fault-input::placeholder {
+            color: #808080;
+        }
+
+        body.dark-mode .fault-textarea {
+            background: #1f1f1f;
+            border-color: #404040;
+            color: #ffffff;
+        }
+
+        body.dark-mode .fault-list {
+            background: #333333;
+        }
+
+        body.dark-mode .fault-list::-webkit-scrollbar-track {
+            background: #2a2a2a;
+        }
+
+        body.dark-mode .fault-list::-webkit-scrollbar-thumb {
+            background: #6c757d;
+        }
+
+        body.dark-mode .fault-list::-webkit-scrollbar-thumb:hover {
+            background: #5a6268;
+        }
+
+        body.dark-mode .fault-item {
+            background: #2a2a2a;
+            border-color: #404040;
+        }
+
+        body.dark-mode .fault-item:hover {
+            background: #333333;
+            border-color: #6c757d;
+        }
+
+        body.dark-mode .fault-location {
+            color: #ffffff;
+        }
+
+        body.dark-mode .fault-description {
+            color: #e8e8e8;
+        }
+
+        body.dark-mode .fault-contact,
+        body.dark-mode .fault-notes {
+            color: #b0b0b0;
+            background: #1f1f1f;
+        }
+
+        body.dark-mode .fault-timestamp {
+            color: #b0b0b0;
+        }
+
+        body.dark-mode .fault-search-bar {
+            background: #333333;
+            border-bottom-color: #404040;
+        }
+
+        body.dark-mode .fault-search-input {
+            background: #1f1f1f;
+            border-color: #404040;
+            color: #ffffff;
+        }
+
+        body.dark-mode .fault-search-input:focus {
+            border-color: #6c757d;
+        }
+
+        body.dark-mode .fault-filter-bar {
+            background: #333333;
+            border-bottom-color: #404040;
+        }
+
+        body.dark-mode .fault-filter-btn {
+            background: #2a2a2a;
+            border-color: #404040;
+            color: #e8e8e8;
+        }
+
+        body.dark-mode .fault-filter-btn:hover {
+            background: #1f1f1f;
+            border-color: #6c757d;
+            color: #ffffff;
+        }
+
+        body.dark-mode .fault-filter-btn.active {
+            background: #6c757d;
+            border-color: #6c757d;
+            color: #ffffff;
+        }
+
+        body.dark-mode .fault-empty-state {
+            color: #b0b0b0;
+        }
+
+        body.dark-mode .fault-empty-state h4 {
+            color: #e8e8e8;
+        }
+
+        body.dark-mode .fault-empty-state p {
+            color: #b0b0b0;
+        }
+
+        /* Water Temperature Dark Mode */
+        body.dark-mode .temperature-display {
+            background: #333333;
+            color: #ffffff;
+        }
+
+        body.dark-mode .stats-grid {
+            background: transparent;
+        }
+
+        /* Additional dark mode improvements for all pages */
+        body.dark-mode h2 {
+            color: #ffffff;
+        }
+
+        body.dark-mode .btn-secondary {
+            background: #5a6268;
+            color: #ffffff;
+            border-color: #404040;
+        }
+
+        body.dark-mode .btn-secondary:hover {
+            background: #4e555b;
+        }
+
+        body.dark-mode .btn-sm {
+            border-color: #404040;
+        }
+
+        body.dark-mode option {
+            background: #1f1f1f;
+            color: #ffffff;
+        }
+
+        body.dark-mode .card-spaced {
+            background: #333333;
+        }
+
+        body.dark-mode .card-minimal-padding {
+            background: #333333;
+        }
+
+        /* Fix navigation area backgrounds */
+        body.dark-mode div[style*="background: #f8f9fa"] {
+            background: #333333 !important;
+        }
+
+        body.dark-mode div[style*="color: #333"] {
+            color: #ffffff !important;
+        }
+
+        /* Collapsible Content Animation */
+        .collapsible-content {
+            max-height: 2000px;
+            overflow: hidden;
+            transition: max-height 0.4s ease-in-out, opacity 0.3s ease-in-out;
+            opacity: 1;
+        }
+
+        .collapsible-content.collapsed {
+            max-height: 0;
+            opacity: 0;
+            margin: 0;
+            padding: 0;
+        }
+
+        .collapsible-header {
+            cursor: pointer;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        .collapsible-header:hover {
+            opacity: 0.8;
+        }
     </style>
 </head>
 <body>
@@ -2333,7 +2879,11 @@
                 
                 <div class="grid">
                     <div class="card">
-                        <h3>Email Schedule Configuration</h3>
+                        <h3 onclick="toggleEmailSettings()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                            <span>Email Schedule Configuration</span>
+                            <span id="emailSettingsToggleIcon" style="font-size: 0.8em; transition: transform 0.3s;">▼</span>
+                        </h3>
+                        <div id="emailSettingsContent" class="collapsible-content">
                         <form id="settingsForm">
                         <div class="form-group">
                             <label for="email_time">Daily Report Time:</label>
@@ -2383,6 +2933,19 @@
                         <button type="button" class="btn btn-warning" onclick="testExport()">Test Export PDF</button>
                         <button type="button" class="btn btn-danger" onclick="testClear()">Test Clear Diary</button>
                     </form>
+                        </div>
+                </div>
+                <div class="card">
+                    <h3>🎨 Appearance Settings</h3>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; cursor: pointer; padding: 15px; background: #f8f9fa; border-radius: 8px; transition: all 0.3s;">
+                            <input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode()" style="width: 50px; height: 25px; margin-right: 15px;">
+                            <div>
+                                <strong style="display: block; font-size: 1.1em;">Dark Mode</strong>
+                                <small style="color: #6c757d;">Enable dark color scheme for reduced eye strain</small>
+                            </div>
+                        </label>
+                    </div>
                 </div>
                 <div class="card">
                     <h3>Current Settings</h3>
@@ -2489,6 +3052,31 @@
         let settingsUnlockedStaff = null; // Track who unlocked settings
         let currentAuthenticatedUser = null; // Track authenticated user for all tabs (for activity logging)
 
+        // Dark Mode Functions
+        function toggleDarkMode() {
+            const isDarkMode = document.getElementById('darkModeToggle').checked;
+            if (isDarkMode) {
+                document.body.classList.add('dark-mode');
+                localStorage.setItem('darkMode', 'enabled');
+            } else {
+                document.body.classList.remove('dark-mode');
+                localStorage.setItem('darkMode', 'disabled');
+            }
+        }
+
+        function loadDarkModePreference() {
+            const darkMode = localStorage.getItem('darkMode');
+            if (darkMode === 'enabled') {
+                document.body.classList.add('dark-mode');
+                document.getElementById('darkModeToggle').checked = true;
+            }
+        }
+
+        // Load dark mode preference on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDarkModePreference();
+        });
+
         // Settings PIN Authentication
         function verifySettingsPin(event) {
             event.preventDefault();
@@ -2549,6 +3137,21 @@
             document.getElementById('settings_pin_code').value = '';
             
             showAlert('Settings locked', 'info');
+        }
+
+        function toggleEmailSettings() {
+            const content = document.getElementById('emailSettingsContent');
+            const icon = document.getElementById('emailSettingsToggleIcon');
+            
+            if (content.classList.contains('collapsed')) {
+                content.classList.remove('collapsed');
+                icon.style.transform = 'rotate(0deg)';
+                icon.textContent = '▼';
+            } else {
+                content.classList.add('collapsed');
+                icon.style.transform = 'rotate(-90deg)';
+                icon.textContent = '▶';
+            }
         }
         
         function loadSettingsAccessLogs() {
@@ -4154,7 +4757,7 @@
             }
             
             statsContainer.innerHTML = `
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; text-align: center;">
+                <div style="background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%); color: white; padding: 20px; border-radius: 10px; text-align: center;">
                     <div style="font-size: 0.9em; opacity: 0.9; margin-bottom: 5px;">Period</div>
                     <div style="font-size: 1.1em; font-weight: 600;">${periodName === 'custom' ? 'Custom' : periodName.charAt(0).toUpperCase() + periodName.slice(1)}</div>
                     <div style="font-size: 0.8em; opacity: 0.8; margin-top: 5px;">${rangeStr}</div>

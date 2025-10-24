@@ -124,6 +124,17 @@ class ActivityLog(db.Model):
 # Initialize scheduler
 scheduler = BackgroundScheduler()
 
+# Wrapper functions for scheduled tasks that need app context
+def send_daily_report_with_context(report_date=None):
+    """Wrapper for send_daily_report that provides Flask app context"""
+    with app.app_context():
+        return send_daily_report(report_date)
+
+def cleanup_old_leave_data_with_context():
+    """Wrapper for cleanup_old_leave_data that provides Flask app context"""
+    with app.app_context():
+        return cleanup_old_leave_data()
+
 def get_porter_groups():
     """Get porter groups from database"""
     staff_members = StaffMember.query.filter_by(active=True).all()
@@ -2355,7 +2366,7 @@ def update_scheduler():
             
             # Add new job
             scheduler.add_job(
-                func=send_daily_report,
+                func=send_daily_report_with_context,
                 trigger="cron",
                 hour=hour,
                 minute=minute,
@@ -2488,7 +2499,7 @@ if __name__ == '__main__':
         if settings.email_enabled:
             hour, minute = map(int, settings.email_time.split(':'))
             scheduler.add_job(
-                func=send_daily_report,
+                func=send_daily_report_with_context,
                 trigger="cron",
                 hour=hour,
                 minute=minute,
@@ -2497,7 +2508,7 @@ if __name__ == '__main__':
         
         # Schedule daily cleanup of old leave data (runs at 3 AM every day)
         scheduler.add_job(
-            func=cleanup_old_leave_data,
+            func=cleanup_old_leave_data_with_context,
             trigger="cron",
             hour=3,
             minute=0,
