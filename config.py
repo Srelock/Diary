@@ -13,7 +13,7 @@ EMAIL_CONFIG = {
 # Schedule Configuration
 # NOTE: Email time and recipients are controlled via the Settings tab in the web interface
 # This DAILY_REPORT_TIME value is NOT used by the app (kept for reference only)
-DAILY_REPORT_TIME = "18:00"
+DAILY_REPORT_TIME = "23:59"
 
 # Database Configuration
 # NOTE: This is NOT currently used by the app (kept for reference only)
