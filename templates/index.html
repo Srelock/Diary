@@ -1281,8 +1281,9 @@
                 display: none !important;
             }
             
-            /* Show only the print container */
-            #faultPrintContainer {
+            /* Show only the print containers */
+            #faultPrintContainer,
+            #staffSchedulePrintContainer {
                 display: block !important;
             }
             
@@ -1478,6 +1479,77 @@
             }
             
             .screen-only {
+                display: none !important;
+            }
+            
+            /* Staff Schedule Print Styles */
+            .print-schedule-header {
+                text-align: center;
+                margin-bottom: 30px;
+                border-bottom: 3px solid #2c3e50;
+                padding-bottom: 20px;
+            }
+            
+            .print-schedule-header h1 {
+                font-size: 24pt;
+                margin: 0 0 10px 0;
+                color: #2c3e50;
+                text-transform: uppercase;
+                letter-spacing: 2px;
+            }
+            
+            .print-schedule-header h2 {
+                font-size: 18pt;
+                margin: 0 0 10px 0;
+                color: #333;
+                font-weight: 600;
+            }
+            
+            .print-schedule-header p {
+                font-size: 12pt;
+                margin: 0;
+                color: #666;
+            }
+            
+            .staff-schedule-print-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+                font-size: 10pt;
+                page-break-inside: auto;
+            }
+            
+            .staff-schedule-print-table thead {
+                background: #2c3e50;
+                color: white;
+            }
+            
+            .staff-schedule-print-table th {
+                border: 1px solid #000;
+                padding: 10px 8px;
+                text-align: left;
+                font-weight: bold;
+                font-size: 10pt;
+            }
+            
+            .staff-schedule-print-table td {
+                border: 1px solid #666;
+                padding: 8px 6px;
+                text-align: left;
+                font-size: 9pt;
+                vertical-align: top;
+            }
+            
+            .staff-schedule-print-table tbody tr {
+                page-break-inside: avoid;
+            }
+            
+            .staff-schedule-print-table tbody tr:nth-child(even) {
+                background-color: #f9f9f9;
+            }
+            
+            /* Hide staff schedule results div when printing */
+            #staffScheduleResults {
                 display: none !important;
             }
         }
@@ -2582,6 +2654,61 @@
                 </div>
             </div>
             
+            <!-- Individual Staff Schedule Printout -->
+            <div class="card card-spaced" style="margin-top: 30px; margin-bottom: 30px;">
+                <h3>📋 Individual Staff Schedule Printout</h3>
+                <p style="color: #666; margin-bottom: 20px;">Generate a printable schedule for a staff member showing their shifts and days off.</p>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 15px; align-items: end;">
+                    <div class="form-group">
+                        <label for="printStaffSelect">Staff Member:</label>
+                        <select id="printStaffSelect" class="form-control" required>
+                            <option value="">Select staff member...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="printStartDate">Start Date:</label>
+                        <input type="date" id="printStartDate" class="form-control" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="printEndDate">End Date:</label>
+                        <input type="date" id="printEndDate" class="form-control" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label style="opacity: 0;">Quick Select</label>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" class="btn btn-secondary" onclick="setScheduleRange(30)" style="padding: 8px 15px; font-size: 0.9em;">30 Days</button>
+                            <button type="button" class="btn btn-secondary" onclick="setScheduleRange(60)" style="padding: 8px 15px; font-size: 0.9em;">60 Days</button>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label style="opacity: 0;">Actions</label>
+                        <button type="button" class="btn btn-primary" onclick="generateStaffSchedule()" style="padding: 10px 24px;">
+                            Generate Schedule
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Schedule Results -->
+                <div id="staffScheduleResults" style="display: none; margin-top: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 15px; background: #e8f5e9; border-radius: 8px;">
+                        <div>
+                            <h4 id="scheduleStaffName" style="margin: 0; color: #2e7d32;"></h4>
+                            <p id="scheduleDateRange" style="margin: 5px 0 0 0; color: #666;"></p>
+                        </div>
+                        <button type="button" class="btn btn-success" onclick="printStaffSchedule()" style="padding: 10px 24px; display: flex; align-items: center; gap: 8px;">
+                            <span>🖨️</span> Print Schedule
+                        </button>
+                    </div>
+                    
+                    <div id="staffScheduleTable" class="screen-only" style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px;"></div>
+                </div>
+            </div>
+            
             <!-- Rota Navigation -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
                 <button class="btn btn-primary" onclick="navigateRotaPrevious()" style="padding: 10px 20px;">
@@ -3043,6 +3170,9 @@
         </div>
     </div>
 
+    <!-- Hidden Print Container for Staff Schedule (outside main container) -->
+    <div id="staffSchedulePrintContainer" style="display: none;"></div>
+
     <script>
         // Global variables
         let currentTab = 'daily';
@@ -3394,6 +3524,7 @@
         function populateStaffDropdowns(staffList) {
             const holidaySelect = document.getElementById('holiday_staff');
             const sickSelect = document.getElementById('sick_staff');
+            const printStaffSelect = document.getElementById('printStaffSelect');
             
             if (!holidaySelect || !sickSelect) return;
             
@@ -3405,6 +3536,16 @@
             
             holidaySelect.innerHTML = options;
             sickSelect.innerHTML = options;
+            
+            // Populate print staff dropdown with staff ID as value
+            if (printStaffSelect) {
+                const printOptions = '<option value="">Select staff member...</option>' + 
+                    staffList.map(s => {
+                        const shiftName = s.shift === 3 ? 'Night Shift' : `Shift ${s.shift}`;
+                        return `<option value="${s.id}" data-shift="${s.shift}">${s.name} (${shiftName})</option>`;
+                    }).join('');
+                printStaffSelect.innerHTML = printOptions;
+            }
         }
         
         function displayStaffLegend(staffList) {
@@ -3679,6 +3820,224 @@
                 });
             });
         }
+
+        // Individual Staff Schedule Functions
+        function setScheduleRange(days) {
+            const today = new Date();
+            const endDate = new Date();
+            endDate.setDate(today.getDate() + days);
+            
+            document.getElementById('printStartDate').valueAsDate = today;
+            document.getElementById('printEndDate').valueAsDate = endDate;
+        }
+
+        function generateStaffSchedule() {
+            const staffId = document.getElementById('printStaffSelect').value;
+            const startDate = document.getElementById('printStartDate').value;
+            const endDate = document.getElementById('printEndDate').value;
+            
+            if (!staffId) {
+                showAlert('Please select a staff member', 'warning');
+                return;
+            }
+            
+            if (!startDate || !endDate) {
+                showAlert('Please select start and end dates', 'warning');
+                return;
+            }
+            
+            if (new Date(endDate) < new Date(startDate)) {
+                showAlert('End date must be after start date', 'warning');
+                return;
+            }
+            
+            // Show loading
+            const resultsDiv = document.getElementById('staffScheduleResults');
+            resultsDiv.style.display = 'block';
+            document.getElementById('staffScheduleTable').innerHTML = '<div class="loading">Generating schedule...</div>';
+            
+            // Fetch schedule
+            fetch(`/api/staff-schedule/${staffId}?start_date=${startDate}&end_date=${endDate}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displayStaffSchedule(data);
+                    } else {
+                        showAlert('Error generating schedule: ' + data.error, 'danger');
+                        resultsDiv.style.display = 'none';
+                    }
+                })
+                .catch(error => {
+                    showAlert('Error generating schedule: ' + error, 'danger');
+                    resultsDiv.style.display = 'none';
+                });
+        }
+
+        function displayStaffSchedule(data) {
+            const shiftName = data.staff.shift === 3 ? 'Night Shift' : `Shift ${data.staff.shift}`;
+            
+            // Update header info
+            document.getElementById('scheduleStaffName').textContent = `${data.staff.name} - ${shiftName}`;
+            
+            const startDateFormatted = new Date(data.start_date).toLocaleDateString('en-GB', { 
+                day: 'numeric', month: 'short', year: 'numeric' 
+            });
+            const endDateFormatted = new Date(data.end_date).toLocaleDateString('en-GB', { 
+                day: 'numeric', month: 'short', year: 'numeric' 
+            });
+            document.getElementById('scheduleDateRange').textContent = `${startDateFormatted} - ${endDateFormatted}`;
+            
+            // Create table
+            let tableHTML = `
+                <table class="table" style="width: 100%; margin: 0;">
+                    <thead style="background: #2c3e50; color: white; position: sticky; top: 0;">
+                        <tr>
+                            <th style="padding: 12px; text-align: left; width: 15%;">Date</th>
+                            <th style="padding: 12px; text-align: left; width: 15%;">Day</th>
+                            <th style="padding: 12px; text-align: center; width: 15%;">Status</th>
+                            <th style="padding: 12px; text-align: center; width: 20%;">Shift Times</th>
+                            <th style="padding: 12px; text-align: left; width: 35%;">Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            data.schedule.forEach((day, index) => {
+                const dateFormatted = new Date(day.date).toLocaleDateString('en-GB', { 
+                    day: '2-digit', month: 'short', year: 'numeric' 
+                });
+                
+                let statusClass = '';
+                let statusText = '';
+                let statusColor = '';
+                
+                if (day.status === 'working') {
+                    statusClass = 'badge badge-success';
+                    statusText = 'Working';
+                    statusColor = '#d4edda';
+                } else if (day.status === 'off') {
+                    statusClass = 'badge badge-secondary';
+                    statusText = 'Off';
+                    statusColor = '#f8f9fa';
+                } else if (day.status === 'holiday') {
+                    statusClass = 'badge badge-warning';
+                    statusText = 'Holiday';
+                    statusColor = '#fff3cd';
+                } else if (day.status === 'sick') {
+                    statusClass = 'badge badge-danger';
+                    statusText = 'Sick';
+                    statusColor = '#f8d7da';
+                }
+                
+                const shiftTimes = day.shift_start && day.shift_end ? 
+                    `${day.shift_start} - ${day.shift_end}` : '-';
+                
+                const rowStyle = `background: ${statusColor}; ${index % 2 === 0 ? '' : 'opacity: 0.9;'}`;
+                
+                tableHTML += `
+                    <tr style="${rowStyle}">
+                        <td style="padding: 10px; border-bottom: 1px solid #ddd;">${dateFormatted}</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #ddd; font-weight: 600;">${day.day_of_week}</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: center;">
+                            <span class="${statusClass}" style="padding: 4px 12px; border-radius: 12px; font-size: 0.85em;">${statusText}</span>
+                        </td>
+                        <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: center; font-family: monospace;">${shiftTimes}</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #ddd; font-size: 0.9em;">${day.notes || '-'}</td>
+                    </tr>
+                `;
+            });
+            
+            tableHTML += `
+                    </tbody>
+                </table>
+            `;
+            
+            document.getElementById('staffScheduleTable').innerHTML = tableHTML;
+            
+            // Store data for printing
+            window.currentScheduleData = data;
+        }
+
+        function printStaffSchedule() {
+            if (!window.currentScheduleData) {
+                showAlert('No schedule to print', 'warning');
+                return;
+            }
+            
+            const data = window.currentScheduleData;
+            const shiftName = data.staff.shift === 3 ? 'Night Shift' : `Shift ${data.staff.shift}`;
+            
+            const startDateFormatted = new Date(data.start_date).toLocaleDateString('en-GB', { 
+                day: 'numeric', month: 'long', year: 'numeric' 
+            });
+            const endDateFormatted = new Date(data.end_date).toLocaleDateString('en-GB', { 
+                day: 'numeric', month: 'long', year: 'numeric' 
+            });
+            
+            // Create print-friendly content
+            let printHTML = `
+                <div class="print-schedule-header">
+                    <h1>Staff Schedule</h1>
+                    <h2>${data.staff.name} - ${shiftName}</h2>
+                    <p>${startDateFormatted} to ${endDateFormatted}</p>
+                </div>
+                <table class="staff-schedule-print-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Day</th>
+                            <th>Status</th>
+                            <th>Shift Times</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            data.schedule.forEach(day => {
+                const dateFormatted = new Date(day.date).toLocaleDateString('en-GB', { 
+                    day: '2-digit', month: 'short', year: 'numeric' 
+                });
+                
+                const shiftTimes = day.shift_start && day.shift_end ? 
+                    `${day.shift_start} - ${day.shift_end}` : '-';
+                
+                printHTML += `
+                    <tr>
+                        <td>${dateFormatted}</td>
+                        <td>${day.day_of_week}</td>
+                        <td style="text-align: center;">${day.status.charAt(0).toUpperCase() + day.status.slice(1)}</td>
+                        <td style="text-align: center;">${shiftTimes}</td>
+                        <td>${day.notes || '-'}</td>
+                    </tr>
+                `;
+            });
+            
+            printHTML += `
+                    </tbody>
+                </table>
+            `;
+            
+            document.getElementById('staffSchedulePrintContainer').innerHTML = printHTML;
+            
+            // Trigger print
+            window.print();
+        }
+
+        // Initialize schedule date inputs
+        document.addEventListener('DOMContentLoaded', function() {
+            const today = new Date();
+            const startInput = document.getElementById('printStartDate');
+            const endInput = document.getElementById('printEndDate');
+            
+            if (startInput && endInput) {
+                startInput.valueAsDate = today;
+                
+                const endDate = new Date();
+                endDate.setDate(today.getDate() + 30);
+                endInput.valueAsDate = endDate;
+            }
+        });
 
         // Tab switching
         function showTab(tabName) {

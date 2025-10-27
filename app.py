@@ -1337,6 +1337,145 @@ def staff_rota_range():
         'message': f'Added {days_added} day(s) of {status}'
     })
 
+@app.route('/api/staff-schedule/<int:staff_id>', methods=['GET'])
+def staff_schedule(staff_id):
+    """Get individual staff member's schedule for a date range"""
+    # Get staff member
+    staff = StaffMember.query.get(staff_id)
+    if not staff:
+        return jsonify({'success': False, 'error': 'Staff member not found'}), 404
+    
+    # Get date range parameters
+    start_date_str = request.args.get('start_date', datetime.now().date().isoformat())
+    end_date_str = request.args.get('end_date', (datetime.now() + timedelta(days=30)).date().isoformat())
+    
+    start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+    end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+    
+    # Get porter groups for rotation calculation
+    porter_groups, all_staff = get_porter_groups()
+    
+    # Rotation patterns
+    rotation_pattern = {
+        # Week 1
+        (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
+        (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
+        # Week 2
+        (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
+        (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
+        # Week 3
+        (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
+        (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
+        # Week 4
+        (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
+        (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
+    }
+    
+    night_shift_rotation = {
+        # Week 1
+        (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
+        (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
+        # Week 2
+        (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
+        (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
+        # Week 3
+        (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
+        (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
+        # Week 4
+        (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
+        (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
+    }
+    
+    # Reference date for rotation calculation
+    reference_date = datetime(2025, 9, 29).date()
+    
+    # Default shift times
+    shift_times = {
+        1: {'start': '06:00', 'end': '14:00'},
+        2: {'start': '14:00', 'end': '22:00'},
+        3: {'start': '22:00', 'end': '06:00'}
+    }
+    
+    # Get manual entries from StaffRota for this staff member
+    manual_entries = StaffRota.query.filter(
+        StaffRota.staff_name == staff.name,
+        StaffRota.date >= start_date,
+        StaffRota.date <= end_date
+    ).all()
+    
+    # Create a dictionary of manual entries by date
+    manual_by_date = {entry.date: entry for entry in manual_entries}
+    
+    # Build schedule for date range
+    schedule = []
+    current = start_date
+    
+    while current <= end_date:
+        # Calculate rotation for this date
+        days_diff = (current - reference_date).days
+        week_in_cycle = (days_diff // 7) % 4
+        day_of_week = current.weekday()
+        pattern_key = (week_in_cycle, day_of_week)
+        
+        # Check if there's a manual entry for this date
+        if current in manual_by_date:
+            entry = manual_by_date[current]
+            schedule.append({
+                'date': current.isoformat(),
+                'day_of_week': current.strftime('%A'),
+                'status': entry.status,
+                'shift_start': entry.shift_start or shift_times[staff.shift]['start'],
+                'shift_end': entry.shift_end or shift_times[staff.shift]['end'],
+                'notes': entry.notes or '',
+                'is_manual': True
+            })
+        else:
+            # Use rotation schedule
+            is_off = False
+            
+            if staff.shift in [1, 2]:
+                # Day shift rotation
+                colors_off = rotation_pattern.get(pattern_key, None)
+                if colors_off and not isinstance(colors_off, list):
+                    colors_off = [colors_off]
+                
+                if colors_off and staff.color in colors_off:
+                    is_off = True
+                    
+            elif staff.shift == 3:
+                # Night shift rotation
+                night_colors_off = night_shift_rotation.get(pattern_key, None)
+                if night_colors_off and not isinstance(night_colors_off, list):
+                    night_colors_off = [night_colors_off]
+                
+                if night_colors_off and staff.color in night_colors_off:
+                    is_off = True
+            
+            schedule.append({
+                'date': current.isoformat(),
+                'day_of_week': current.strftime('%A'),
+                'status': 'off' if is_off else 'working',
+                'shift_start': shift_times[staff.shift]['start'] if not is_off else '',
+                'shift_end': shift_times[staff.shift]['end'] if not is_off else '',
+                'notes': '',
+                'is_manual': False
+            })
+        
+        current += timedelta(days=1)
+    
+    return jsonify({
+        'success': True,
+        'staff': {
+            'id': staff.id,
+            'name': staff.name,
+            'shift': staff.shift,
+            'color': staff.color
+        },
+        'start_date': start_date.isoformat(),
+        'end_date': end_date.isoformat(),
+        'schedule': schedule
+    })
+
 @app.route('/api/porter-rota', methods=['GET'])
 def porter_rota():
     """Get porter rota schedule based on 4-week rotation pattern"""
