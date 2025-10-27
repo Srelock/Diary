@@ -417,6 +417,34 @@ This document contains all available API endpoints for the Diary application.
 }
 ```
 
+### Backup to Google Drive
+**Endpoint:** `POST /api/backup-to-gdrive`
+
+**Description:** Manually trigger a Google Drive backup of the database. Uploads `diary_latest.db` to the `Diary_Backups` folder in Google Drive, replacing any existing backup.
+
+**Requirements:**
+- `service_account.json` file must be present in project root
+- Google Drive API must be enabled
+- See `GOOGLE_DRIVE_SETUP.md` for setup instructions
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "message": "Database successfully backed up to Google Drive!\n\nFile: diary_latest.db\nFolder: Diary_Backups\n\nOnly the latest backup is kept in Google Drive."
+}
+```
+
+**Response (Error):**
+```json
+{
+  "success": false,
+  "error": "Backup failed. Check console for details.\n\nCommon issues:\n- service_account.json file missing\n- Invalid credentials\n- No internet connection\n- Google Drive API not enabled"
+}
+```
+
+**Note:** The system automatically backs up to Google Drive daily at 2:00 AM. This endpoint allows manual backup on demand.
+
 ### Get Email Logs
 **Endpoint:** `GET /api/email-logs`
 
@@ -755,11 +783,18 @@ All endpoints return error responses in the following format:
 - **SMTP Server:** `smtp.gmail.com:587`
 - **Database:** SQLite (`instance/diary.db`)
 
+### Scheduled Tasks
+- **2:00 AM** - Automatic Google Drive backup (daily)
+- **3:00 AM** - Cleanup old leave data (older than 2 years)
+- **User-configured time** - Send daily report email
+
 ### File Locations
 - **PDF Reports:** `reports/PDF/`
 - **CSV Reports:** `reports/CSV/`
 - **Logs:** `logs/`
 - **Database:** `instance/diary.db`
+- **Google Drive Backup:** `Diary_Backups/diary_latest.db` (in Google Drive)
+- **Credentials:** `service_account.json` (not committed to git)
 
 ---
 
@@ -783,6 +818,7 @@ All endpoints return error responses in the following format:
 | `/api/reprint-report` | POST | Regenerate report |
 | `/api/test-email` | POST | Send test email |
 | `/api/test-clear` | POST | Clear today's entries |
+| `/api/backup-to-gdrive` | POST | Backup database to Google Drive |
 | `/api/schedule-settings` | GET, POST | Email schedule settings |
 | `/api/email-logs` | GET | Email history |
 | `/api/staff-members` | GET, POST | Manage staff members |
@@ -796,6 +832,6 @@ All endpoints return error responses in the following format:
 
 ---
 
-**Last Updated:** October 25, 2025  
-**Version:** 1.0
+**Last Updated:** October 27, 2025  
+**Version:** 1.1 - Added Google Drive backup functionality
 
