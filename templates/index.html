@@ -5494,8 +5494,13 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    const days = data.days_added || 1;
-                    showAlert(`Holiday added successfully! ${days} day(s) booked.`, 'success');
+                    const workingDays = data.working_days_count || data.days_added || 1;
+                    const totalDays = data.days_added || 1;
+                    let message = `Holiday added successfully! ${workingDays} working day(s) booked.`;
+                    if (workingDays !== totalDays) {
+                        message += ` (${totalDays - workingDays} scheduled off day(s) excluded)`;
+                    }
+                    showAlert(message, 'success');
                     document.getElementById('holidayForm').reset();
                     loadLeaveData();
                     loadTodaySchedule(); // Refresh today's schedule
@@ -5543,8 +5548,13 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    const days = data.days_added || 1;
-                    showAlert(`Sick leave added successfully! ${days} day(s) booked.`, 'success');
+                    const workingDays = data.working_days_count || data.days_added || 1;
+                    const totalDays = data.days_added || 1;
+                    let message = `Sick leave added successfully! ${workingDays} working day(s) booked.`;
+                    if (workingDays !== totalDays) {
+                        message += ` (${totalDays - workingDays} scheduled off day(s) excluded)`;
+                    }
+                    showAlert(message, 'success');
                     document.getElementById('sickForm').reset();
                     loadLeaveData();
                     loadTodaySchedule(); // Refresh today's schedule
@@ -5645,12 +5655,16 @@
                         notes: leave.notes,
                         dates: [leaveDate],
                         ids: [leave.id],
+                        working_days: leave.is_working_day ? 1 : 0,
                         lastDate: leaveDate
                     };
                 } else {
                     // Add to current group
                     currentGroup.dates.push(leaveDate);
                     currentGroup.ids.push(leave.id);
+                    if (leave.is_working_day) {
+                        currentGroup.working_days++;
+                    }
                     currentGroup.lastDate = leaveDate;
                 }
             });
@@ -5682,7 +5696,7 @@
                 status: group.status,
                 notes: group.notes,
                 dateRange: dateRange,
-                days: dates.length,
+                days: group.working_days,  // Show only working days
                 ids: group.ids
             };
         }
