@@ -18,13 +18,17 @@ import webbrowser
 import threading
 import signal
 import sys
+from colorama import init, Fore, Back, Style
+
+# Initialize colorama for Windows console colors
+init(autoreset=True)
 
 # Import configuration from config.py
 try:
     from config import EMAIL_CONFIG
-    print("✓ Email configuration loaded from config.py")
+    print(Fore.GREEN + "✓ Email configuration loaded from config.py")
 except ImportError:
-    print("⚠️ Warning: config.py not found, using default email configuration")
+    print(Fore.YELLOW + "⚠️ Warning: config.py not found, using default email configuration")
     EMAIL_CONFIG = {
         'smtp_server': 'smtp.gmail.com',
         'smtp_port': 587,
@@ -135,6 +139,11 @@ def cleanup_old_leave_data_with_context():
     with app.app_context():
         return cleanup_old_leave_data()
 
+def backup_database_to_gdrive_with_context():
+    """Wrapper for backup_database_to_gdrive that provides Flask app context"""
+    with app.app_context():
+        return backup_database_to_gdrive()
+
 def get_porter_groups():
     """Get porter groups from database"""
     staff_members = StaffMember.query.filter_by(active=True).all()
@@ -162,7 +171,7 @@ def send_daily_report(report_date=None):
         # Check if email is enabled
         settings = ScheduleSettings.query.first()
         if not settings or not settings.email_enabled:
-            print("Email sending is disabled")
+            print(Fore.YELLOW + "Email sending is disabled")
             return
         
         # Use provided date or default to today
@@ -200,16 +209,16 @@ def send_daily_report(report_date=None):
                     occurrence.sent = True
                 db.session.commit()
             
-            print(f"Daily report sent successfully for {report_date}")
-            print(f"Local backups saved - PDF: {pdf_path}, CSV: {csv_path}")
+            print(Fore.GREEN + f"Daily report sent successfully for {report_date}")
+            print(Fore.CYAN + f"Local backups saved - PDF: {pdf_path}, CSV: {csv_path}")
         else:
-            print(f"⚠️ Email failed to send for {report_date}, but PDF/CSV saved locally")
-            print(f"PDF: {pdf_path}")
-            print(f"CSV: {csv_path}")
+            print(Fore.YELLOW + f"⚠️ Email failed to send for {report_date}, but PDF/CSV saved locally")
+            print(Fore.CYAN + f"PDF: {pdf_path}")
+            print(Fore.CYAN + f"CSV: {csv_path}")
         
         return email_sent
     except Exception as e:
-        print(f"Error sending daily report: {e}")
+        print(Fore.RED + f"Error sending daily report: {e}")
         return False
 
 def generate_daily_pdf(occurrences, report_date=None):
@@ -1170,10 +1179,10 @@ def send_email_with_pdf(pdf_path, subject, recipient=None):
         server.sendmail(sender_email, recipients, text)  # Send to list of recipients
         server.quit()
         
-        print(f"Email sent successfully from {sender_email} to: {', '.join(recipients)}")
+        print(Fore.GREEN + f"Email sent successfully from {sender_email} to: {', '.join(recipients)}")
         return True
     except Exception as e:
-        print(f"Error sending email: {e}")
+        print(Fore.RED + f"Error sending email: {e}")
         return False
 
 # Routes
@@ -1692,9 +1701,9 @@ def reprint_report():
         # Get the filename
         pdf_filename = os.path.basename(pdf_path)
         
-        print(f"✓ Reprinted report for {report_date}: {pdf_filename}")
-        print(f"  - Occurrences: {len(occurrences)}")
-        print(f"  - Water temps: {len(water_temps)}")
+        print(Fore.GREEN + f"✓ Reprinted report for {report_date}: {pdf_filename}")
+        print(Fore.CYAN + f"  - Occurrences: {len(occurrences)}")
+        print(Fore.CYAN + f"  - Water temps: {len(water_temps)}")
         
         return jsonify({
             'success': True,
@@ -1707,7 +1716,7 @@ def reprint_report():
     except ValueError as e:
         return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
     except Exception as e:
-        print(f"Error reprinting report: {e}")
+        print(Fore.RED + f"Error reprinting report: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -1737,12 +1746,12 @@ def test_email():
                 'error': 'Recipient email not configured. Please enter a recipient email address.'
             })
         
-        print(f"\n{'='*50}")
-        print(f"SENDING TEST EMAIL")
-        print(f"{'='*50}")
-        print(f"From: {settings.sender_email}")
-        print(f"To: {settings.recipient_email}")
-        print(f"SMTP Server: {settings.smtp_server}:{settings.smtp_port}")
+        print(Fore.CYAN + Style.BRIGHT + f"\n{'='*50}")
+        print(Fore.CYAN + Style.BRIGHT + f"SENDING TEST EMAIL")
+        print(Fore.CYAN + Style.BRIGHT + f"{'='*50}")
+        print(Fore.CYAN + f"From: {settings.sender_email}")
+        print(Fore.CYAN + f"To: {settings.recipient_email}")
+        print(Fore.CYAN + f"SMTP Server: {settings.smtp_server}:{settings.smtp_port}")
         
         # Get today's occurrences
         today = datetime.now().date()
@@ -1753,16 +1762,16 @@ def test_email():
             DailyOccurrence.sent == False
         ).all()
         
-        print(f"Occurrences found: {len(occurrences)}")
+        print(Fore.CYAN + f"Occurrences found: {len(occurrences)}")
         
         # Generate PDF and CSV for local backup (not sent via email)
         pdf_path = generate_daily_pdf(occurrences, today)
         csv_path = generate_daily_csv(occurrences, today)
-        print(f"PDF generated for local backup: {pdf_path}")
-        print(f"CSV generated for local backup: {csv_path}")
+        print(Fore.CYAN + f"PDF generated for local backup: {pdf_path}")
+        print(Fore.CYAN + f"CSV generated for local backup: {csv_path}")
         
         # Send test email with HTML styling (no PDF attachment)
-        print(f"Attempting to send HTML email (no PDF attachment)...")
+        print(Fore.CYAN + f"Attempting to send HTML email (no PDF attachment)...")
         email_sent = send_email_with_pdf(
             pdf_path, 
             f"TEST - Daily Report - {today}", 
@@ -1771,24 +1780,24 @@ def test_email():
         
         if email_sent:
             occurrence_count = len(occurrences) if occurrences else 0
-            print(f"✓ HTML email sent successfully (no PDF attachment)!")
-            print(f"{'='*50}\n")
+            print(Fore.GREEN + f"✓ HTML email sent successfully (no PDF attachment)!")
+            print(Fore.CYAN + Style.BRIGHT + f"{'='*50}\n")
             return jsonify({
                 'success': True,
                 'message': f'Test email sent successfully to {settings.recipient_email}!\n\nEmail includes:\n- Beautiful HTML styling\n- {occurrence_count} occurrence(s)\n- Staff schedule in 3 columns\n- Water temperature readings\n\nNo PDF attachment (as requested)\n\nCheck your inbox!',
                 'count': occurrence_count
             })
         else:
-            print(f"✗ Email failed to send!")
-            print(f"{'='*50}\n")
+            print(Fore.RED + f"✗ Email failed to send!")
+            print(Fore.CYAN + Style.BRIGHT + f"{'='*50}\n")
             return jsonify({
                 'success': False,
                 'error': 'Failed to send test email. Check console for details. Common issues:\n- Wrong email/password\n- Gmail: Need App Password, not regular password\n- Firewall blocking SMTP\n- Check spam folder'
             })
             
     except Exception as e:
-        print(f"✗ ERROR: {str(e)}")
-        print(f"{'='*50}\n")
+        print(Fore.RED + f"✗ ERROR: {str(e)}")
+        print(Fore.CYAN + Style.BRIGHT + f"{'='*50}\n")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': f'Error sending test email: {str(e)}'})
@@ -1819,6 +1828,36 @@ def test_clear():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/api/backup-to-gdrive', methods=['POST'])
+def manual_backup_to_gdrive():
+    """Manually trigger a Google Drive backup"""
+    try:
+        print(Fore.CYAN + Style.BRIGHT + "\n" + "=" * 50)
+        print(Fore.CYAN + Style.BRIGHT + "MANUAL GOOGLE DRIVE BACKUP")
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
+        
+        success = backup_database_to_gdrive()
+        
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50 + "\n")
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Database successfully backed up to Google Drive!\n\nFile: diary_latest.db\nFolder: Diary_Backups\n\nOnly the latest backup is kept in Google Drive.'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Backup failed. Check console for details.\n\nCommon issues:\n- service_account.json file missing\n- Invalid credentials\n- No internet connection\n- Google Drive API not enabled'
+            })
+    except Exception as e:
+        print(Fore.RED + f"✗ Error in manual backup: {str(e)}")
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50 + "\n")
+        return jsonify({
+            'success': False,
+            'error': f'Error triggering backup: {str(e)}'
+        })
+
 def log_settings_access(staff_name, action, success, ip_address=None):
     """Log all settings access attempts to a file"""
     try:
@@ -1835,9 +1874,9 @@ def log_settings_access(staff_name, action, success, ip_address=None):
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(log_entry)
         
-        print(f"Settings access logged: {log_entry.strip()}")
+        print(Fore.CYAN + f"Settings access logged: {log_entry.strip()}")
     except Exception as e:
-        print(f"Error logging settings access: {e}")
+        print(Fore.RED + f"Error logging settings access: {e}")
 
 def log_activity(user_name, action_type, entity_type, description, entity_id=None, ip_address=None):
     """Log user activity to database"""
@@ -1852,9 +1891,9 @@ def log_activity(user_name, action_type, entity_type, description, entity_id=Non
         )
         db.session.add(activity)
         db.session.commit()
-        print(f"Activity logged: {user_name} - {description}")
+        print(Fore.CYAN + f"Activity logged: {user_name} - {description}")
     except Exception as e:
-        print(f"Error logging activity: {e}")
+        print(Fore.RED + f"Error logging activity: {e}")
         db.session.rollback()
 
 def log_shutdown(reason="Normal shutdown"):
@@ -1870,9 +1909,9 @@ def log_shutdown(reason="Normal shutdown"):
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(log_entry)
         
-        print(f"Shutdown logged: {log_entry.strip()}")
+        print(Fore.CYAN + f"Shutdown logged: {log_entry.strip()}")
     except Exception as e:
-        print(f"Error logging shutdown: {e}")
+        print(Fore.RED + f"Error logging shutdown: {e}")
 
 def log_startup():
     """Log application startup to a text file"""
@@ -1887,9 +1926,9 @@ def log_startup():
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(log_entry)
         
-        print(f"Startup logged: {log_entry.strip()}")
+        print(Fore.GREEN + f"Startup logged: {log_entry.strip()}")
     except Exception as e:
-        print(f"Error logging startup: {e}")
+        print(Fore.RED + f"Error logging startup: {e}")
 
 @app.route('/api/verify-settings-pin', methods=['POST'])
 def verify_settings_pin():
@@ -1924,7 +1963,7 @@ def verify_settings_pin():
         return jsonify({'success': False, 'error': 'Invalid PIN'})
         
     except Exception as e:
-        print(f"Error verifying settings PIN: {e}")
+        print(Fore.RED + f"Error verifying settings PIN: {e}")
         log_settings_access('Unknown', f'Settings Access Error: {str(e)}', False, request.remote_addr)
         return jsonify({'success': False, 'error': str(e)})
 
@@ -1951,7 +1990,7 @@ def get_settings_access_logs():
         })
         
     except Exception as e:
-        print(f"Error reading access logs: {e}")
+        print(Fore.RED + f"Error reading access logs: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/activity-logs', methods=['GET'])
@@ -2255,19 +2294,19 @@ def initialize_shift_leaders():
                 )
                 db.session.add(leader)
                 added_count += 1
-                print(f"✓ Added shift leader: {name} (default PIN: {default_pin})")
+                print(Fore.GREEN + f"✓ Added shift leader: {name} (default PIN: {default_pin})")
         
         if added_count > 0:
             db.session.commit()
-            print(f"\n{'='*50}")
-            print(f"IMPORTANT: {added_count} shift leader(s) created with default PIN: {default_pin}")
-            print(f"Please change PINs immediately for security!")
-            print(f"{'='*50}\n")
+            print(Fore.YELLOW + Style.BRIGHT + f"\n{'='*50}")
+            print(Fore.YELLOW + Style.BRIGHT + f"IMPORTANT: {added_count} shift leader(s) created with default PIN: {default_pin}")
+            print(Fore.YELLOW + Style.BRIGHT + f"Please change PINs immediately for security!")
+            print(Fore.YELLOW + Style.BRIGHT + f"{'='*50}\n")
         else:
-            print("All shift leaders already exist in database.")
+            print(Fore.GREEN + "All shift leaders already exist in database.")
             
     except Exception as e:
-        print(f"Error initializing shift leaders: {e}")
+        print(Fore.RED + f"Error initializing shift leaders: {e}")
         db.session.rollback()
 
 def cleanup_old_leave_data():
@@ -2286,20 +2325,132 @@ def cleanup_old_leave_data():
             for record in old_records:
                 db.session.delete(record)
             db.session.commit()
-            print(f"✓ Cleaned up {count} old leave record(s) from before {two_years_ago}")
+            print(Fore.GREEN + f"✓ Cleaned up {count} old leave record(s) from before {two_years_ago}")
         else:
-            print(f"No old leave records to clean up (older than {two_years_ago})")
+            print(Fore.CYAN + f"No old leave records to clean up (older than {two_years_ago})")
             
     except Exception as e:
-        print(f"Error cleaning up old leave data: {e}")
+        print(Fore.RED + f"Error cleaning up old leave data: {e}")
         db.session.rollback()
+
+def upload_to_google_drive(file_path, file_name='diary_latest.db'):
+    """Upload file to Google Drive, replacing any existing backup"""
+    try:
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+        from googleapiclient.http import MediaFileUpload
+        
+        # Check if service account credentials exist
+        credentials_path = 'service_account.json'
+        if not os.path.exists(credentials_path):
+            print(Fore.RED + "✗ Google Drive backup failed: service_account.json not found")
+            print(Fore.YELLOW + "  Please follow instructions in GOOGLE_DRIVE_SETUP.md to set up credentials")
+            return False
+        
+        # Load credentials
+        SCOPES = ['https://www.googleapis.com/auth/drive.file']
+        credentials = service_account.Credentials.from_service_account_file(
+            credentials_path, scopes=SCOPES)
+        
+        # Build Drive API service
+        service = build('drive', 'v3', credentials=credentials)
+        
+        # Search for "Diary_Backups" folder
+        folder_name = 'Diary_Backups'
+        folder_query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        folder_results = service.files().list(q=folder_query, spaces='drive', fields='files(id, name)').execute()
+        folders = folder_results.get('files', [])
+        
+        # Create folder if it doesn't exist
+        if not folders:
+            folder_metadata = {
+                'name': folder_name,
+                'mimeType': 'application/vnd.google-apps.folder'
+            }
+            folder = service.files().create(body=folder_metadata, fields='id').execute()
+            folder_id = folder.get('id')
+            print(Fore.GREEN + f"✓ Created '{folder_name}' folder in Google Drive")
+        else:
+            folder_id = folders[0]['id']
+        
+        # Search for existing backup file with the same name
+        file_query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
+        file_results = service.files().list(q=file_query, spaces='drive', fields='files(id, name)').execute()
+        existing_files = file_results.get('files', [])
+        
+        # Delete existing backup if found
+        if existing_files:
+            for existing_file in existing_files:
+                service.files().delete(fileId=existing_file['id']).execute()
+                print(Fore.CYAN + f"  Deleted old backup: {existing_file['name']}")
+        
+        # Upload new backup file
+        file_metadata = {
+            'name': file_name,
+            'parents': [folder_id]
+        }
+        media = MediaFileUpload(file_path, mimetype='application/x-sqlite3', resumable=True)
+        uploaded_file = service.files().create(body=file_metadata, media_body=media, fields='id, name, size').execute()
+        
+        file_size_kb = int(uploaded_file.get('size', 0)) / 1024
+        print(Fore.GREEN + f"✓ Database backed up to Google Drive successfully!")
+        print(Fore.CYAN + f"  File: {uploaded_file.get('name')}")
+        print(Fore.CYAN + f"  Size: {file_size_kb:.2f} KB")
+        print(Fore.CYAN + f"  Folder: {folder_name}")
+        print(Fore.GREEN + f"  Only latest backup kept (old backups deleted)")
+        
+        return True
+        
+    except Exception as e:
+        print(Fore.RED + f"✗ Error uploading to Google Drive: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def backup_database_to_gdrive():
+    """Create backup of database and upload to Google Drive"""
+    import shutil
+    import tempfile
+    
+    try:
+        # Source database file
+        db_path = os.path.join('instance', 'diary.db')
+        
+        if not os.path.exists(db_path):
+            print(Fore.RED + "✗ Database file not found, skipping Google Drive backup")
+            return False
+        
+        # Get file size for reporting
+        file_size_kb = os.path.getsize(db_path) / 1024
+        print(Fore.CYAN + f"Starting Google Drive backup...")
+        print(Fore.CYAN + f"  Database size: {file_size_kb:.2f} KB")
+        
+        # Create temporary copy (in case upload takes time and db is being used)
+        with tempfile.NamedTemporaryFile(mode='w+b', suffix='.db', delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+            shutil.copy2(db_path, tmp_path)
+        
+        # Upload to Google Drive
+        success = upload_to_google_drive(tmp_path, 'diary_latest.db')
+        
+        # Clean up temporary file
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+        
+        return success
+        
+    except Exception as e:
+        print(Fore.RED + f"✗ Error backing up database to Google Drive: {e}")
+        return False
 
 def check_missed_reports():
     """Check for missed daily reports and send them on startup"""
     try:
         settings = ScheduleSettings.query.first()
         if not settings or not settings.email_enabled:
-            print("Email not enabled, skipping missed report check")
+            print(Fore.YELLOW + "Email not enabled, skipping missed report check")
             return
         
         # Check the last 7 days for missed reports
@@ -2336,21 +2487,21 @@ def check_missed_reports():
             
             # If there's data (occurrences or water temps) and no email was sent, send it now
             if unsent_occurrences > 0 or water_temps > 0:
-                print(f"⚠️ MISSED REPORT DETECTED for {check_date}")
-                print(f"   - Unsent occurrences: {unsent_occurrences}")
-                print(f"   - Water temperature readings: {water_temps}")
-                print(f"   - Sending report now...")
+                print(Fore.YELLOW + Style.BRIGHT + f"⚠️ MISSED REPORT DETECTED for {check_date}")
+                print(Fore.YELLOW + f"   - Unsent occurrences: {unsent_occurrences}")
+                print(Fore.YELLOW + f"   - Water temperature readings: {water_temps}")
+                print(Fore.YELLOW + f"   - Sending report now...")
                 
                 success = send_daily_report(check_date)
                 if success:
-                    print(f"✓ Missed report for {check_date} sent successfully!")
+                    print(Fore.GREEN + f"✓ Missed report for {check_date} sent successfully!")
                 else:
-                    print(f"✗ Failed to send missed report for {check_date}")
+                    print(Fore.RED + f"✗ Failed to send missed report for {check_date}")
         
-        print("Missed report check completed")
+        print(Fore.GREEN + "Missed report check completed")
         
     except Exception as e:
-        print(f"Error checking for missed reports: {e}")
+        print(Fore.RED + f"Error checking for missed reports: {e}")
 
 def update_scheduler():
     """Update the scheduler with new time settings"""
@@ -2372,9 +2523,9 @@ def update_scheduler():
                 minute=minute,
                 id='daily_report'
             )
-            print(f"Scheduler updated to send emails at {settings.email_time}")
+            print(Fore.GREEN + f"Scheduler updated to send emails at {settings.email_time}")
     except Exception as e:
-        print(f"Error updating scheduler: {e}")
+        print(Fore.RED + f"Error updating scheduler: {e}")
 
 def migrate_database():
     """Migrate database to handle schema changes safely"""
@@ -2414,28 +2565,28 @@ def migrate_database():
                     conn.execute(text("DROP TABLE water_temperature"))
                     conn.execute(text("ALTER TABLE water_temperature_new RENAME TO water_temperature"))
                     conn.commit()
-                print("✓ water_temperature table migrated successfully!")
+                print(Fore.GREEN + "✓ water_temperature table migrated successfully!")
         
         # Check if schedule_settings table needs new sender email columns
         if 'schedule_settings' in inspector.get_table_names():
             columns = [col['name'] for col in inspector.get_columns('schedule_settings')]
             
             if 'sender_email' not in columns:
-                print("Adding sender email configuration columns to schedule_settings...")
+                print(Fore.CYAN + "Adding sender email configuration columns to schedule_settings...")
                 with db.engine.connect() as conn:
                     conn.execute(text("ALTER TABLE schedule_settings ADD COLUMN sender_email VARCHAR(200) DEFAULT ''"))
                     conn.execute(text("ALTER TABLE schedule_settings ADD COLUMN sender_password VARCHAR(200) DEFAULT ''"))
                     conn.execute(text("ALTER TABLE schedule_settings ADD COLUMN smtp_server VARCHAR(200) DEFAULT 'smtp.gmail.com'"))
                     conn.execute(text("ALTER TABLE schedule_settings ADD COLUMN smtp_port INTEGER DEFAULT 587"))
                     conn.commit()
-                print("✓ Sender email columns added successfully!")
+                print(Fore.GREEN + "✓ Sender email columns added successfully!")
         
         # Check if cctv_fault table needs new detailed fields
         if 'cctv_fault' in inspector.get_table_names():
             columns = [col['name'] for col in inspector.get_columns('cctv_fault')]
             
             if 'flat_number' not in columns:
-                print("Adding detailed fields to cctv_fault table...")
+                print(Fore.CYAN + "Adding detailed fields to cctv_fault table...")
                 with db.engine.connect() as conn:
                     conn.execute(text("ALTER TABLE cctv_fault ADD COLUMN flat_number VARCHAR(20) DEFAULT ''"))
                     conn.execute(text("ALTER TABLE cctv_fault ADD COLUMN block_number VARCHAR(20) DEFAULT ''"))
@@ -2443,24 +2594,24 @@ def migrate_database():
                     conn.execute(text("ALTER TABLE cctv_fault ADD COLUMN contact_details VARCHAR(200) DEFAULT ''"))
                     conn.execute(text("ALTER TABLE cctv_fault ADD COLUMN additional_notes TEXT DEFAULT ''"))
                     conn.commit()
-                print("✓ CCTV/Intercom fault detailed fields added successfully!")
+                print(Fore.GREEN + "✓ CCTV/Intercom fault detailed fields added successfully!")
         
         # Create all tables if they don't exist (includes ActivityLog)
         db.create_all()
-        print("✓ Tables created/verified successfully!")
+        print(Fore.GREEN + "✓ Tables created/verified successfully!")
         
         # Verify ActivityLog table was created
         if 'activity_log' in inspector.get_table_names():
-            print("✓ ActivityLog table ready for user activity tracking")
+            print(Fore.GREEN + "✓ ActivityLog table ready for user activity tracking")
         
     except Exception as e:
-        print(f"Migration error: {e}")
+        print(Fore.RED + f"Migration error: {e}")
         # Only create tables if they don't exist - NEVER drop existing data
         try:
             db.create_all()
             print("Tables created/verified successfully!")
         except Exception as create_error:
-            print(f"Error creating tables: {create_error}")
+            print(Fore.RED + f"Error creating tables: {create_error}")
 
 if __name__ == '__main__':
     with app.app_context():
@@ -2468,11 +2619,11 @@ if __name__ == '__main__':
         migrate_database()
         
         # Initialize shift leaders
-        print("=" * 50)
-        print("INITIALIZING SHIFT LEADERS...")
-        print("=" * 50)
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
+        print(Fore.CYAN + Style.BRIGHT + "INITIALIZING SHIFT LEADERS...")
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
         initialize_shift_leaders()
-        print("=" * 50)
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
         
         # Initialize scheduler with default settings
         settings = ScheduleSettings.query.first()
@@ -2482,18 +2633,18 @@ if __name__ == '__main__':
             db.session.commit()
         
         # Check for missed reports on startup (last 7 days)
-        print("=" * 50)
-        print("CHECKING FOR MISSED REPORTS...")
-        print("=" * 50)
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
+        print(Fore.CYAN + Style.BRIGHT + "CHECKING FOR MISSED REPORTS...")
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
         check_missed_reports()
-        print("=" * 50)
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
         
         # Clean up old leave data (older than 2 years)
-        print("=" * 50)
-        print("CLEANING UP OLD LEAVE DATA...")
-        print("=" * 50)
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
+        print(Fore.CYAN + Style.BRIGHT + "CLEANING UP OLD LEAVE DATA...")
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
         cleanup_old_leave_data()
-        print("=" * 50)
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
         
         # Schedule daily report using settings
         if settings.email_enabled:
@@ -2513,6 +2664,15 @@ if __name__ == '__main__':
             hour=3,
             minute=0,
             id='cleanup_old_leave'
+        )
+        
+        # Schedule daily Google Drive backup (runs at 2 AM every day)
+        scheduler.add_job(
+            func=backup_database_to_gdrive_with_context,
+            trigger="cron",
+            hour=2,
+            minute=0,
+            id='daily_gdrive_backup'
         )
         
         scheduler.start()
@@ -2546,7 +2706,7 @@ if __name__ == '__main__':
         import time
         time.sleep(1.5)  # Give Flask time to start
         webbrowser.open('http://127.0.0.1:5000')
-        print("✓ Browser opened automatically")
+        print(Fore.GREEN + "✓ Browser opened automatically")
     
     # Start browser in background thread
     threading.Thread(target=open_browser, daemon=True).start()

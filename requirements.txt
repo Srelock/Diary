@@ -25,6 +25,15 @@ python-dateutil==2.8.2          # Extensions to the standard datetime module
 # Windows Integration
 pywin32>=306                    # Python for Windows extensions (required for PDF printing)
 
+# Console Output Colorization
+colorama==0.4.6                 # Cross-platform colored terminal text
+
+# Google Drive API Integration
+google-auth==2.25.2             # Google authentication library
+google-auth-oauthlib==1.2.0     # OAuth library for Google
+google-auth-httplib2==0.2.0     # HTTP library integration
+google-api-python-client==2.110.0  # Google Drive API client
+
 # ========================================
 # Built-in Python modules used (no install needed):
 # - smtplib (email sending)
