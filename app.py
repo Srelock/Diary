@@ -1264,15 +1264,88 @@ def staff_rota():
         StaffRota.date <= end_date
     ).order_by(StaffRota.date).all()
     
-    return jsonify([{
-        'id': r.id,
-        'date': r.date.isoformat(),
-        'staff_name': r.staff_name,
-        'shift_start': r.shift_start,
-        'shift_end': r.shift_end,
-        'status': r.status,
-        'notes': r.notes
-    } for r in rotas])
+    # Reference date for rotation calculation
+    reference_date = datetime(2025, 9, 29).date()
+    
+    # Rotation patterns
+    rotation_pattern = {
+        # Week 1
+        (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
+        (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
+        # Week 2
+        (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
+        (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
+        # Week 3
+        (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
+        (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
+        # Week 4
+        (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
+        (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
+    }
+    
+    night_shift_rotation = {
+        # Week 1
+        (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
+        (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
+        # Week 2
+        (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
+        (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
+        # Week 3
+        (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
+        (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
+        # Week 4
+        (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
+        (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
+    }
+    
+    # Build response with working day calculation
+    result = []
+    for r in rotas:
+        # Get staff member info
+        staff = StaffMember.query.filter_by(name=r.staff_name).first()
+        is_working_day = True  # Default to true if we can't determine
+        
+        if staff:
+            # Calculate rotation for this date
+            days_diff = (r.date - reference_date).days
+            week_in_cycle = (days_diff // 7) % 4
+            day_of_week = r.date.weekday()
+            pattern_key = (week_in_cycle, day_of_week)
+            
+            is_scheduled_off = False
+            
+            if staff.shift in [1, 2]:
+                # Day shift rotation
+                colors_off = rotation_pattern.get(pattern_key, None)
+                if colors_off and not isinstance(colors_off, list):
+                    colors_off = [colors_off]
+                
+                if colors_off and staff.color in colors_off:
+                    is_scheduled_off = True
+                    
+            elif staff.shift == 3:
+                # Night shift rotation
+                night_colors_off = night_shift_rotation.get(pattern_key, None)
+                if night_colors_off and not isinstance(night_colors_off, list):
+                    night_colors_off = [night_colors_off]
+                
+                if night_colors_off and staff.color in night_colors_off:
+                    is_scheduled_off = True
+            
+            is_working_day = not is_scheduled_off
+        
+        result.append({
+            'id': r.id,
+            'date': r.date.isoformat(),
+            'staff_name': r.staff_name,
+            'shift_start': r.shift_start,
+            'shift_end': r.shift_end,
+            'status': r.status,
+            'notes': r.notes,
+            'is_working_day': is_working_day
+        })
+    
+    return jsonify(result)
 
 @app.route('/api/staff-rota/<int:rota_id>', methods=['DELETE'])
 def delete_staff_rota(rota_id):
@@ -1293,7 +1366,7 @@ def delete_staff_rota(rota_id):
 
 @app.route('/api/staff-rota-range', methods=['POST'])
 def staff_rota_range():
-    """Add leave for a date range (creates one entry per day)"""
+    """Add leave for a date range (creates one entry per day, only counting working days)"""
     data = request.json
     staff_name = data['staff_name']
     date_from = datetime.strptime(data['date_from'], '%Y-%m-%d').date()
@@ -1305,11 +1378,77 @@ def staff_rota_range():
     if date_to < date_from:
         return jsonify({'success': False, 'error': 'To date must be after or equal to from date'}), 400
     
+    # Get staff member to determine their shift and color
+    staff = StaffMember.query.filter_by(name=staff_name).first()
+    if not staff:
+        return jsonify({'success': False, 'error': 'Staff member not found'}), 404
+    
+    # Reference date for rotation calculation
+    reference_date = datetime(2025, 9, 29).date()
+    
+    # Rotation patterns (same as in staff_schedule function)
+    rotation_pattern = {
+        # Week 1
+        (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
+        (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
+        # Week 2
+        (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
+        (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
+        # Week 3
+        (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
+        (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
+        # Week 4
+        (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
+        (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
+    }
+    
+    night_shift_rotation = {
+        # Week 1
+        (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
+        (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
+        # Week 2
+        (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
+        (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
+        # Week 3
+        (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
+        (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
+        # Week 4
+        (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
+        (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
+    }
+    
     # Create entries for each day in range
     current_date = date_from
     days_added = 0
+    working_days_count = 0  # Only count days they were supposed to work
     
     while current_date <= date_to:
+        # Calculate if this person was scheduled to work on this day
+        days_diff = (current_date - reference_date).days
+        week_in_cycle = (days_diff // 7) % 4
+        day_of_week = current_date.weekday()
+        pattern_key = (week_in_cycle, day_of_week)
+        
+        is_scheduled_off = False
+        
+        if staff.shift in [1, 2]:
+            # Day shift rotation
+            colors_off = rotation_pattern.get(pattern_key, None)
+            if colors_off and not isinstance(colors_off, list):
+                colors_off = [colors_off]
+            
+            if colors_off and staff.color in colors_off:
+                is_scheduled_off = True
+                
+        elif staff.shift == 3:
+            # Night shift rotation
+            night_colors_off = night_shift_rotation.get(pattern_key, None)
+            if night_colors_off and not isinstance(night_colors_off, list):
+                night_colors_off = [night_colors_off]
+            
+            if night_colors_off and staff.color in night_colors_off:
+                is_scheduled_off = True
+        
         # Check if entry already exists for this date
         existing = StaffRota.query.filter_by(
             date=current_date,
@@ -1326,6 +1465,14 @@ def staff_rota_range():
             )
             db.session.add(rota)
             days_added += 1
+            
+            # Only count as a working day if they were scheduled to work
+            if not is_scheduled_off:
+                working_days_count += 1
+        else:
+            # If entry exists and they were scheduled to work, still count it
+            if not is_scheduled_off:
+                working_days_count += 1
         
         current_date += timedelta(days=1)
     
@@ -1334,7 +1481,8 @@ def staff_rota_range():
     return jsonify({
         'success': True,
         'days_added': days_added,
-        'message': f'Added {days_added} day(s) of {status}'
+        'working_days_count': working_days_count,
+        'message': f'Added {days_added} day(s) of {status} ({working_days_count} working day(s))'
     })
 
 @app.route('/api/staff-schedule/<int:staff_id>', methods=['GET'])
@@ -1389,12 +1537,19 @@ def staff_schedule(staff_id):
     # Reference date for rotation calculation
     reference_date = datetime(2025, 9, 29).date()
     
-    # Default shift times
-    shift_times = {
-        1: {'start': '06:00', 'end': '14:00'},
-        2: {'start': '14:00', 'end': '22:00'},
-        3: {'start': '22:00', 'end': '06:00'}
+    # Rotating shift schedule based on 4-week cycle
+    # Week 1 & 3: Shift 1 = Late (2pm-10pm), Shift 2 = Early (7am-2pm)
+    # Week 2 & 4: Shift 1 = Early (7am-2pm), Shift 2 = Late (2pm-10pm)
+    # Night shift is always the same (10pm-7am)
+    shift_schedule = {
+        0: {'shift1_start': '14:00', 'shift1_end': '22:00', 'shift2_start': '07:00', 'shift2_end': '14:00'},  # Week 1
+        1: {'shift1_start': '07:00', 'shift1_end': '14:00', 'shift2_start': '14:00', 'shift2_end': '22:00'},  # Week 2
+        2: {'shift1_start': '14:00', 'shift1_end': '22:00', 'shift2_start': '07:00', 'shift2_end': '14:00'},  # Week 3
+        3: {'shift1_start': '07:00', 'shift1_end': '14:00', 'shift2_start': '14:00', 'shift2_end': '22:00'}   # Week 4
     }
+    
+    # Night shift is constant
+    night_shift_times = {'start': '22:00', 'end': '07:00'}
     
     # Get manual entries from StaffRota for this staff member
     manual_entries = StaffRota.query.filter(
@@ -1417,6 +1572,19 @@ def staff_schedule(staff_id):
         day_of_week = current.weekday()
         pattern_key = (week_in_cycle, day_of_week)
         
+        # Get shift times based on week in cycle
+        week_schedule = shift_schedule.get(week_in_cycle, shift_schedule[0])
+        
+        if staff.shift == 1:
+            default_start = week_schedule['shift1_start']
+            default_end = week_schedule['shift1_end']
+        elif staff.shift == 2:
+            default_start = week_schedule['shift2_start']
+            default_end = week_schedule['shift2_end']
+        else:  # shift 3 (night)
+            default_start = night_shift_times['start']
+            default_end = night_shift_times['end']
+        
         # Check if there's a manual entry for this date
         if current in manual_by_date:
             entry = manual_by_date[current]
@@ -1424,8 +1592,8 @@ def staff_schedule(staff_id):
                 'date': current.isoformat(),
                 'day_of_week': current.strftime('%A'),
                 'status': entry.status,
-                'shift_start': entry.shift_start or shift_times[staff.shift]['start'],
-                'shift_end': entry.shift_end or shift_times[staff.shift]['end'],
+                'shift_start': entry.shift_start or default_start,
+                'shift_end': entry.shift_end or default_end,
                 'notes': entry.notes or '',
                 'is_manual': True
             })
@@ -1455,8 +1623,8 @@ def staff_schedule(staff_id):
                 'date': current.isoformat(),
                 'day_of_week': current.strftime('%A'),
                 'status': 'off' if is_off else 'working',
-                'shift_start': shift_times[staff.shift]['start'] if not is_off else '',
-                'shift_end': shift_times[staff.shift]['end'] if not is_off else '',
+                'shift_start': default_start if not is_off else '',
+                'shift_end': default_end if not is_off else '',
                 'notes': '',
                 'is_manual': False
             })
