@@ -2,71 +2,34 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.pyc
-*.pyo
-*.pyd
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# Virtual environment
-env/
+# Virtual Environment
 venv/
+env/
 ENV/
 
-# Flask
+# Instance folder
 instance/
-.webassets-cache
-
-# Database - keep your diary data local
 *.db
-*.sqlite
-*.sqlite3
 
-# Logs - keep your logs local
-logs/*.log
-logs/*.txt
+# Logs
+logs/
+*.log
 
-# Generated reports - keep your reports local
-reports/*.pdf
-reports/*.csv
-reports/PDF/*.pdf
-reports/CSV/*.csv
+# Reports
+reports/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
-desktop.ini
 
-# Environment variables
-.env
-.env.local
-
-# Google Drive credentials - DO NOT commit to git
-service_account.json
-
-# Temporary files
-*.tmp
-*.bak
-*.old
+# Deployment package (if you want to include it, remove this line)
+deployment_package/
