@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify, send_file
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
+import csv
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -112,6 +113,7 @@ class ShiftLeader(db.Model):
     name = db.Column(db.String(100), nullable=False, unique=True)
     pin = db.Column(db.String(100), nullable=False)  # Store hashed PIN
     active = db.Column(db.Boolean, default=True)
+    is_super_user = db.Column(db.Boolean, default=False)  # Super user has special privileges
     created_date = db.Column(db.DateTime, default=datetime.now)
     last_login = db.Column(db.DateTime)
 
@@ -125,8 +127,123 @@ class ActivityLog(db.Model):
     description = db.Column(db.Text, nullable=False)  # Human-readable description
     ip_address = db.Column(db.String(50))
 
+class Overtime(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    staff_name = db.Column(db.String(100), nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    hours = db.Column(db.Float, nullable=False)
+    description = db.Column(db.Text)
+    created_by = db.Column(db.String(100))  # Super user who created this
+    created_date = db.Column(db.DateTime, default=datetime.now)
+    updated_date = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
 # Initialize scheduler
 scheduler = BackgroundScheduler()
+
+# Rotation Pattern Constants (reused across multiple functions)
+# Reference date for rotation calculation - September 29, 2025 (Monday of Week 1)
+ROTATION_REFERENCE_DATE = datetime(2025, 9, 29).date()
+
+# Day shift rotation pattern (4-week cycle)
+# Week number (0-3), Day of week (0=Monday, 6=Sunday)
+DAY_SHIFT_ROTATION_PATTERN = {
+    # Week 1
+    (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
+    (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
+    # Week 2
+    (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
+    (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
+    # Week 3
+    (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
+    (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
+    # Week 4
+    (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
+    (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
+}
+
+# Night shift rotation pattern (separate 4-week cycle)
+NIGHT_SHIFT_ROTATION_PATTERN = {
+    # Week 1: Mon-Purple, Tue-Purple, Wed-DarkRed, Thu-DarkGreen, Fri-DarkGreen, Sat-BrownishYellow, Sun-BrownishYellow+Purple
+    (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
+    (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
+    # Week 2: Mon-DarkRed, Tue-DarkRed, Wed-DarkGreen, Thu-BrownishYellow, Fri-BrownishYellow, Sat-Purple, Sun-Purple+DarkRed
+    (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
+    (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
+    # Week 3: Mon-DarkGreen, Tue-DarkGreen, Wed-BrownishYellow, Thu-Purple, Fri-Purple, Sat-DarkRed, Sun-DarkRed+DarkGreen
+    (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
+    (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
+    # Week 4: Mon-BrownishYellow, Tue-BrownishYellow, Wed-Purple, Thu-DarkRed, Fri-DarkRed, Sat-DarkGreen, Sun-DarkGreen+BrownishYellow
+    (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
+    (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
+}
+
+# Helper Functions for Rotation Calculations
+def get_rotation_key(date, reference_date=None):
+    """Calculate rotation pattern key (week_in_cycle, day_of_week) for a given date"""
+    if reference_date is None:
+        reference_date = ROTATION_REFERENCE_DATE
+    days_diff = (date - reference_date).days
+    week_in_cycle = (days_diff // 7) % 4
+    day_of_week = date.weekday()
+    return (week_in_cycle, day_of_week)
+
+def normalize_colors(colors_off):
+    """Ensure colors_off is always a list for uniform processing"""
+    if colors_off and not isinstance(colors_off, list):
+        return [colors_off]
+    return colors_off or []
+
+def get_staff_off_names_from_colors(colors_off, porter_groups, shift_types=None):
+    """
+    Get list of staff names who are off based on colors.
+    
+    Args:
+        colors_off: Single color string or list of color strings
+        porter_groups: Dictionary mapping colors to shifts
+        shift_types: List of shift keys to include (e.g., ['shift1', 'shift2']) or None for all
+    
+    Returns:
+        List of staff names who are off
+    """
+    colors_list = normalize_colors(colors_off)
+    staff_names = []
+    
+    if shift_types is None:
+        shift_types = ['shift1', 'shift2', 'shift3']
+    
+    for color in colors_list:
+        if color in porter_groups:
+            for shift_key in shift_types:
+                if shift_key in porter_groups[color]:
+                    staff_names.append(porter_groups[color][shift_key])
+    
+    return staff_names
+
+def get_staff_off_for_date(date, porter_groups, include_night_shift=True):
+    """
+    Get list of staff names who are scheduled off for a given date based on rotation patterns.
+    
+    Args:
+        date: Date object to check
+        porter_groups: Dictionary mapping colors to shifts
+        include_night_shift: Whether to include night shift in the result
+    
+    Returns:
+        List of staff names who are scheduled off
+    """
+    pattern_key = get_rotation_key(date)
+    
+    # Get day shift colors off
+    day_colors_off = normalize_colors(DAY_SHIFT_ROTATION_PATTERN.get(pattern_key))
+    staff_off = get_staff_off_names_from_colors(day_colors_off, porter_groups, ['shift1', 'shift2'])
+    
+    # Add night shift if requested
+    if include_night_shift:
+        night_colors_off = normalize_colors(NIGHT_SHIFT_ROTATION_PATTERN.get(pattern_key))
+        night_staff_off = get_staff_off_names_from_colors(night_colors_off, porter_groups, ['shift3'])
+        staff_off.extend(night_staff_off)
+    
+    return staff_off
 
 # Wrapper functions for scheduled tasks that need app context
 def send_daily_report_with_context(report_date=None):
@@ -270,73 +387,8 @@ def generate_daily_pdf(occurrences, report_date=None):
     # Get staff members from database
     porter_groups, all_staff = get_porter_groups()
     
-    rotation_pattern = {
-        # Week 1
-        (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
-        (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
-        # Week 2
-        (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
-        (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
-        # Week 3
-        (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
-        (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
-        # Week 4
-        (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
-        (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
-    }
-    
-    # Reference date (start of week 1) - September 29, 2025
-    reference_date = datetime(2025, 9, 29).date()
-    days_diff = (today - reference_date).days
-    week_in_cycle = (days_diff // 7) % 4
-    day_of_week = today.weekday()
-    
-    # Get which color group(s) are off
-    pattern_key = (week_in_cycle, day_of_week)
-    colors_off = rotation_pattern.get(pattern_key, None)
-    
-    # Ensure colors_off is always a list for uniform processing
-    if colors_off and not isinstance(colors_off, list):
-        colors_off = [colors_off]
-    
-    # Build list of staff who are off (only for day shifts 1 & 2)
-    staff_off_names = []
-    if colors_off:
-        for color in colors_off:
-            # Only apply rotation to day shift colors (red, yellow, green, blue)
-            if color in ['red', 'yellow', 'green', 'blue'] and color in porter_groups:
-                if 'shift1' in porter_groups[color]:
-                    staff_off_names.append(porter_groups[color]['shift1'])
-                if 'shift2' in porter_groups[color]:
-                    staff_off_names.append(porter_groups[color]['shift2'])
-    
-    # Night shift rotation pattern (separate 4-week cycle)
-    night_shift_rotation = {
-        # Week 1: Mon-Purple, Tue-Purple, Wed-DarkRed, Thu-DarkGreen, Fri-DarkGreen, Sat-BrownishYellow, Sun-BrownishYellow+Purple
-        (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
-        (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
-        # Week 2: Mon-DarkRed, Tue-DarkRed, Wed-DarkGreen, Thu-BrownishYellow, Fri-BrownishYellow, Sat-Purple, Sun-Purple+DarkRed
-        (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
-        (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
-        # Week 3: Mon-DarkGreen, Tue-DarkGreen, Wed-BrownishYellow, Thu-Purple, Fri-Purple, Sat-DarkRed, Sun-DarkRed+DarkGreen
-        (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
-        (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
-        # Week 4: Mon-BrownishYellow, Tue-BrownishYellow, Wed-Purple, Thu-DarkRed, Fri-DarkRed, Sat-DarkGreen, Sun-DarkGreen+BrownishYellow
-        (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
-        (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
-    }
-    
-    # Get night shift colors off for today
-    night_colors_off = night_shift_rotation.get(pattern_key, None)
-    if night_colors_off and not isinstance(night_colors_off, list):
-        night_colors_off = [night_colors_off]
-    
-    # Add night shift staff who are off to the list
-    if night_colors_off:
-        for color in night_colors_off:
-            if color in porter_groups:
-                if 'shift3' in porter_groups[color]:
-                    staff_off_names.append(porter_groups[color]['shift3'])
+    # Get staff who are scheduled off based on rotation patterns
+    staff_off_names = get_staff_off_for_date(today, porter_groups, include_night_shift=True)
     
     # Check database for holidays and sick leave for today
     staff_on_leave = {}
@@ -598,8 +650,6 @@ def generate_daily_pdf(occurrences, report_date=None):
 
 def generate_daily_csv(occurrences, report_date=None):
     """Generate CSV backup of daily occurrences"""
-    import csv
-    
     # Use provided date or default to today
     if report_date is None:
         report_date = datetime.now().date()
@@ -615,70 +665,8 @@ def generate_daily_csv(occurrences, report_date=None):
     today = report_date
     porter_groups, all_staff = get_porter_groups()
     
-    # Calculate staff schedule
-    rotation_pattern = {
-        # Week 1
-        (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
-        (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
-        # Week 2
-        (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
-        (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
-        # Week 3
-        (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
-        (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
-        # Week 4
-        (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
-        (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
-    }
-    
-    reference_date = datetime(2025, 9, 29).date()
-    days_diff = (today - reference_date).days
-    week_in_cycle = (days_diff // 7) % 4
-    day_of_week = today.weekday()
-    
-    pattern_key = (week_in_cycle, day_of_week)
-    colors_off = rotation_pattern.get(pattern_key, None)
-    
-    if colors_off and not isinstance(colors_off, list):
-        colors_off = [colors_off]
-    
-    staff_off_names = []
-    if colors_off:
-        for color in colors_off:
-            # Only apply rotation to day shift colors (red, yellow, green, blue)
-            if color in ['red', 'yellow', 'green', 'blue'] and color in porter_groups:
-                if 'shift1' in porter_groups[color]:
-                    staff_off_names.append(porter_groups[color]['shift1'])
-                if 'shift2' in porter_groups[color]:
-                    staff_off_names.append(porter_groups[color]['shift2'])
-    
-    # Night shift rotation pattern (separate 4-week cycle)
-    night_shift_rotation = {
-        # Week 1: Mon-Purple, Tue-Purple, Wed-DarkRed, Thu-DarkGreen, Fri-DarkGreen, Sat-BrownishYellow, Sun-BrownishYellow+Purple
-        (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
-        (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
-        # Week 2: Mon-DarkRed, Tue-DarkRed, Wed-DarkGreen, Thu-BrownishYellow, Fri-BrownishYellow, Sat-Purple, Sun-Purple+DarkRed
-        (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
-        (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
-        # Week 3: Mon-DarkGreen, Tue-DarkGreen, Wed-BrownishYellow, Thu-Purple, Fri-Purple, Sat-DarkRed, Sun-DarkRed+DarkGreen
-        (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
-        (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
-        # Week 4: Mon-BrownishYellow, Tue-BrownishYellow, Wed-Purple, Thu-DarkRed, Fri-DarkRed, Sat-DarkGreen, Sun-DarkGreen+BrownishYellow
-        (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
-        (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
-    }
-    
-    # Get night shift colors off for today
-    night_colors_off = night_shift_rotation.get(pattern_key, None)
-    if night_colors_off and not isinstance(night_colors_off, list):
-        night_colors_off = [night_colors_off]
-    
-    # Add night shift staff who are off to the list
-    if night_colors_off:
-        for color in night_colors_off:
-            if color in porter_groups:
-                if 'shift3' in porter_groups[color]:
-                    staff_off_names.append(porter_groups[color]['shift3'])
+    # Get staff who are scheduled off based on rotation patterns
+    staff_off_names = get_staff_off_for_date(today, porter_groups, include_night_shift=True)
     
     # Check database for holidays and sick leave for today
     staff_on_leave = {}
@@ -779,62 +767,8 @@ def generate_email_html(occurrences, report_date=None):
     today = report_date
     porter_groups, all_staff = get_porter_groups()
     
-    # Calculate staff schedule (same logic as PDF generation)
-    rotation_pattern = {
-        # Week 1
-        (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
-        (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
-        # Week 2
-        (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
-        (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
-        # Week 3
-        (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
-        (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
-        # Week 4
-        (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
-        (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
-    }
-    
-    reference_date = datetime(2025, 9, 29).date()
-    days_diff = (today - reference_date).days
-    week_in_cycle = (days_diff // 7) % 4
-    day_of_week = today.weekday()
-    pattern_key = (week_in_cycle, day_of_week)
-    colors_off = rotation_pattern.get(pattern_key, None)
-    
-    if colors_off and not isinstance(colors_off, list):
-        colors_off = [colors_off]
-    
-    staff_off_names = []
-    if colors_off:
-        for color in colors_off:
-            if color in ['red', 'yellow', 'green', 'blue'] and color in porter_groups:
-                if 'shift1' in porter_groups[color]:
-                    staff_off_names.append(porter_groups[color]['shift1'])
-                if 'shift2' in porter_groups[color]:
-                    staff_off_names.append(porter_groups[color]['shift2'])
-    
-    # Night shift rotation
-    night_shift_rotation = {
-        (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
-        (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
-        (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
-        (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
-        (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
-        (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
-        (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
-        (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
-    }
-    
-    night_colors_off = night_shift_rotation.get(pattern_key, None)
-    if night_colors_off and not isinstance(night_colors_off, list):
-        night_colors_off = [night_colors_off]
-    
-    if night_colors_off:
-        for color in night_colors_off:
-            if color in porter_groups:
-                if 'shift3' in porter_groups[color]:
-                    staff_off_names.append(porter_groups[color]['shift3'])
+    # Get staff who are scheduled off based on rotation patterns
+    staff_off_names = get_staff_off_for_date(today, porter_groups, include_night_shift=True)
     
     # Check database for holidays and sick leave
     staff_on_leave = {}
@@ -1264,71 +1198,30 @@ def staff_rota():
         StaffRota.date <= end_date
     ).order_by(StaffRota.date).all()
     
-    # Reference date for rotation calculation
-    reference_date = datetime(2025, 9, 29).date()
-    
-    # Rotation patterns
-    rotation_pattern = {
-        # Week 1
-        (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
-        (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
-        # Week 2
-        (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
-        (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
-        # Week 3
-        (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
-        (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
-        # Week 4
-        (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
-        (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
-    }
-    
-    night_shift_rotation = {
-        # Week 1
-        (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
-        (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
-        # Week 2
-        (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
-        (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
-        # Week 3
-        (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
-        (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
-        # Week 4
-        (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
-        (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
-    }
-    
     # Build response with working day calculation
+    # Optimize: Load all staff members once to avoid N+1 queries
+    all_staff_members = {s.name: s for s in StaffMember.query.all()}
+    
     result = []
     for r in rotas:
-        # Get staff member info
-        staff = StaffMember.query.filter_by(name=r.staff_name).first()
+        # Get staff member info from pre-loaded dict
+        staff = all_staff_members.get(r.staff_name)
         is_working_day = True  # Default to true if we can't determine
         
         if staff:
             # Calculate rotation for this date
-            days_diff = (r.date - reference_date).days
-            week_in_cycle = (days_diff // 7) % 4
-            day_of_week = r.date.weekday()
-            pattern_key = (week_in_cycle, day_of_week)
-            
+            pattern_key = get_rotation_key(r.date)
             is_scheduled_off = False
             
             if staff.shift in [1, 2]:
                 # Day shift rotation
-                colors_off = rotation_pattern.get(pattern_key, None)
-                if colors_off and not isinstance(colors_off, list):
-                    colors_off = [colors_off]
-                
+                colors_off = normalize_colors(DAY_SHIFT_ROTATION_PATTERN.get(pattern_key))
                 if colors_off and staff.color in colors_off:
                     is_scheduled_off = True
                     
             elif staff.shift == 3:
                 # Night shift rotation
-                night_colors_off = night_shift_rotation.get(pattern_key, None)
-                if night_colors_off and not isinstance(night_colors_off, list):
-                    night_colors_off = [night_colors_off]
-                
+                night_colors_off = normalize_colors(NIGHT_SHIFT_ROTATION_PATTERN.get(pattern_key))
                 if night_colors_off and staff.color in night_colors_off:
                     is_scheduled_off = True
             
@@ -1383,40 +1276,6 @@ def staff_rota_range():
     if not staff:
         return jsonify({'success': False, 'error': 'Staff member not found'}), 404
     
-    # Reference date for rotation calculation
-    reference_date = datetime(2025, 9, 29).date()
-    
-    # Rotation patterns (same as in staff_schedule function)
-    rotation_pattern = {
-        # Week 1
-        (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
-        (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
-        # Week 2
-        (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
-        (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
-        # Week 3
-        (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
-        (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
-        # Week 4
-        (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
-        (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
-    }
-    
-    night_shift_rotation = {
-        # Week 1
-        (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
-        (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
-        # Week 2
-        (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
-        (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
-        # Week 3
-        (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
-        (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
-        # Week 4
-        (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
-        (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
-    }
-    
     # Create entries for each day in range
     current_date = date_from
     days_added = 0
@@ -1424,28 +1283,18 @@ def staff_rota_range():
     
     while current_date <= date_to:
         # Calculate if this person was scheduled to work on this day
-        days_diff = (current_date - reference_date).days
-        week_in_cycle = (days_diff // 7) % 4
-        day_of_week = current_date.weekday()
-        pattern_key = (week_in_cycle, day_of_week)
-        
+        pattern_key = get_rotation_key(current_date)
         is_scheduled_off = False
         
         if staff.shift in [1, 2]:
             # Day shift rotation
-            colors_off = rotation_pattern.get(pattern_key, None)
-            if colors_off and not isinstance(colors_off, list):
-                colors_off = [colors_off]
-            
+            colors_off = normalize_colors(DAY_SHIFT_ROTATION_PATTERN.get(pattern_key))
             if colors_off and staff.color in colors_off:
                 is_scheduled_off = True
                 
         elif staff.shift == 3:
             # Night shift rotation
-            night_colors_off = night_shift_rotation.get(pattern_key, None)
-            if night_colors_off and not isinstance(night_colors_off, list):
-                night_colors_off = [night_colors_off]
-            
+            night_colors_off = normalize_colors(NIGHT_SHIFT_ROTATION_PATTERN.get(pattern_key))
             if night_colors_off and staff.color in night_colors_off:
                 is_scheduled_off = True
         
@@ -1503,40 +1352,6 @@ def staff_schedule(staff_id):
     # Get porter groups for rotation calculation
     porter_groups, all_staff = get_porter_groups()
     
-    # Rotation patterns
-    rotation_pattern = {
-        # Week 1
-        (0, 0): 'blue', (0, 1): 'green', (0, 2): 'green', (0, 3): 'yellow',
-        (0, 4): 'blue', (0, 5): 'red', (0, 6): ['red', 'yellow'],
-        # Week 2
-        (1, 0): 'red', (1, 1): 'blue', (1, 2): 'blue', (1, 3): 'green',
-        (1, 4): 'red', (1, 5): 'yellow', (1, 6): ['yellow', 'green'],
-        # Week 3
-        (2, 0): 'yellow', (2, 1): 'red', (2, 2): 'red', (2, 3): 'blue',
-        (2, 4): 'yellow', (2, 5): 'green', (2, 6): ['green', 'blue'],
-        # Week 4
-        (3, 0): 'green', (3, 1): 'yellow', (3, 2): 'yellow', (3, 3): 'red',
-        (3, 4): 'green', (3, 5): 'blue', (3, 6): ['blue', 'red'],
-    }
-    
-    night_shift_rotation = {
-        # Week 1
-        (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
-        (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
-        # Week 2
-        (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
-        (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
-        # Week 3
-        (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
-        (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
-        # Week 4
-        (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
-        (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
-    }
-    
-    # Reference date for rotation calculation
-    reference_date = datetime(2025, 9, 29).date()
-    
     # Rotating shift schedule based on 4-week cycle
     # Week 1 & 3: Shift 1 = Late (2pm-10pm), Shift 2 = Early (7am-2pm)
     # Week 2 & 4: Shift 1 = Early (7am-2pm), Shift 2 = Late (2pm-10pm)
@@ -1567,10 +1382,8 @@ def staff_schedule(staff_id):
     
     while current <= end_date:
         # Calculate rotation for this date
-        days_diff = (current - reference_date).days
-        week_in_cycle = (days_diff // 7) % 4
-        day_of_week = current.weekday()
-        pattern_key = (week_in_cycle, day_of_week)
+        pattern_key = get_rotation_key(current)
+        week_in_cycle = pattern_key[0]
         
         # Get shift times based on week in cycle
         week_schedule = shift_schedule.get(week_in_cycle, shift_schedule[0])
@@ -1603,19 +1416,13 @@ def staff_schedule(staff_id):
             
             if staff.shift in [1, 2]:
                 # Day shift rotation
-                colors_off = rotation_pattern.get(pattern_key, None)
-                if colors_off and not isinstance(colors_off, list):
-                    colors_off = [colors_off]
-                
+                colors_off = normalize_colors(DAY_SHIFT_ROTATION_PATTERN.get(pattern_key))
                 if colors_off and staff.color in colors_off:
                     is_off = True
                     
             elif staff.shift == 3:
                 # Night shift rotation
-                night_colors_off = night_shift_rotation.get(pattern_key, None)
-                if night_colors_off and not isinstance(night_colors_off, list):
-                    night_colors_off = [night_colors_off]
-                
+                night_colors_off = normalize_colors(NIGHT_SHIFT_ROTATION_PATTERN.get(pattern_key))
                 if night_colors_off and staff.color in night_colors_off:
                     is_off = True
             
@@ -1668,65 +1475,16 @@ def porter_rota():
         4: {'shift1': 'Early (7am-2pm)', 'shift2': 'Late (2pm-10pm)', 'shift3': 'Night (10pm-7am)'}
     }
     
-    # 4-week rotation pattern (which color is off on which day)
-    # Week number (0-3), Day of week (0=Monday, 6=Sunday)
-    # Sundays can have multiple colors (as list) - 2 people off per shift
-    rotation_pattern = {
-        # Week 1
-        (0, 0): 'blue',   # Monday
-        (0, 1): 'green',  # Tuesday
-        (0, 2): 'green',  # Wednesday
-        (0, 3): 'yellow', # Thursday
-        (0, 4): 'blue',   # Friday
-        (0, 5): 'red',    # Saturday
-        (0, 6): ['red', 'yellow'],    # Sunday - 2 colors = 4 people
-        # Week 2
-        (1, 0): 'red',
-        (1, 1): 'blue',
-        (1, 2): 'blue',
-        (1, 3): 'green',
-        (1, 4): 'red',
-        (1, 5): 'yellow',
-        (1, 6): ['yellow', 'green'],  # Sunday - 2 colors = 4 people
-        # Week 3
-        (2, 0): 'yellow',
-        (2, 1): 'red',
-        (2, 2): 'red',
-        (2, 3): 'blue',
-        (2, 4): 'yellow',
-        (2, 5): 'green',
-        (2, 6): ['green', 'blue'],    # Sunday - 2 colors = 4 people
-        # Week 4
-        (3, 0): 'green',
-        (3, 1): 'yellow',
-        (3, 2): 'yellow',
-        (3, 3): 'red',
-        (3, 4): 'green',
-        (3, 5): 'blue',
-        (3, 6): ['blue', 'red'],      # Sunday - 2 colors = 4 people
-    }
-    
-    # Reference date (start of week 1) - set this to a known Monday
-    # Week 3 is Oct 13-19, so Week 1 started on Sept 29, 2025
-    reference_date = datetime(2025, 9, 29).date()  # Monday of Week 1
-    
     schedule = []
     current = start
     while current <= end:
         # Calculate which week in the 4-week cycle
-        days_diff = (current - reference_date).days
-        week_in_cycle = (days_diff // 7) % 4
-        day_of_week = current.weekday()  # 0=Monday, 6=Sunday
-        
+        pattern_key = get_rotation_key(current)
+        week_in_cycle = pattern_key[0]
         week_number = week_in_cycle + 1
         
         # Get which color group(s) are off
-        pattern_key = (week_in_cycle, day_of_week)
-        colors_off = rotation_pattern.get(pattern_key, None)
-        
-        # Ensure colors_off is always a list for uniform processing
-        if colors_off and not isinstance(colors_off, list):
-            colors_off = [colors_off]
+        colors_off = normalize_colors(DAY_SHIFT_ROTATION_PATTERN.get(pattern_key))
         
         # Build staff off list with shift information
         staff_off_list = []
@@ -1750,26 +1508,7 @@ def porter_rota():
                         })
         
         # Night shift (shift 3) rotation pattern
-        night_rotation = {
-            # Week 1: Mon-Purple, Tue-Purple, Wed-DarkRed, Thu-DarkGreen, Fri-DarkGreen, Sat-BrownishYellow, Sun-BrownishYellow+Purple
-            (0, 0): 'purple', (0, 1): 'purple', (0, 2): 'darkred', (0, 3): 'darkgreen',
-            (0, 4): 'darkgreen', (0, 5): 'brownishyellow', (0, 6): ['brownishyellow', 'purple'],
-            # Week 2: Mon-DarkRed, Tue-DarkRed, Wed-DarkGreen, Thu-BrownishYellow, Fri-BrownishYellow, Sat-Purple, Sun-Purple+DarkRed
-            (1, 0): 'darkred', (1, 1): 'darkred', (1, 2): 'darkgreen', (1, 3): 'brownishyellow',
-            (1, 4): 'brownishyellow', (1, 5): 'purple', (1, 6): ['purple', 'darkred'],
-            # Week 3: Mon-DarkGreen, Tue-DarkGreen, Wed-BrownishYellow, Thu-Purple, Fri-Purple, Sat-DarkRed, Sun-DarkRed+DarkGreen
-            (2, 0): 'darkgreen', (2, 1): 'darkgreen', (2, 2): 'brownishyellow', (2, 3): 'purple',
-            (2, 4): 'purple', (2, 5): 'darkred', (2, 6): ['darkred', 'darkgreen'],
-            # Week 4: Mon-BrownishYellow, Tue-BrownishYellow, Wed-Purple, Thu-DarkRed, Fri-DarkRed, Sat-DarkGreen, Sun-DarkGreen+BrownishYellow
-            (3, 0): 'brownishyellow', (3, 1): 'brownishyellow', (3, 2): 'purple', (3, 3): 'darkred',
-            (3, 4): 'darkred', (3, 5): 'darkgreen', (3, 6): ['darkgreen', 'brownishyellow'],
-        }
-        
-        # Get night shift colors off
-        night_pattern_key = (week_in_cycle, day_of_week)
-        night_colors_off = night_rotation.get(night_pattern_key, None)
-        if night_colors_off and not isinstance(night_colors_off, list):
-            night_colors_off = [night_colors_off]
+        night_colors_off = normalize_colors(NIGHT_SHIFT_ROTATION_PATTERN.get(pattern_key))
         
         # Add night shift staff who are off
         if night_colors_off:
@@ -2262,7 +2001,9 @@ def verify_settings_pin():
                 log_settings_access(shift_leader.name, 'Settings Access Granted', True, request.remote_addr)
                 return jsonify({
                     'success': True,
-                    'name': shift_leader.name
+                    'name': shift_leader.name,
+                    'is_super_user': shift_leader.is_super_user,
+                    'user_type': 'Super User' if shift_leader.is_super_user else 'Shift Leader'
                 })
         
         # No matching PIN found
@@ -2273,6 +2014,187 @@ def verify_settings_pin():
         print(Fore.RED + f"Error verifying settings PIN: {e}")
         log_settings_access('Unknown', f'Settings Access Error: {str(e)}', False, request.remote_addr)
         return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/verify-leave-pin', methods=['POST'])
+def verify_leave_pin():
+    """Verify PIN for leave/overtime access - only super users allowed"""
+    try:
+        data = request.json
+        pin = data.get('pin')
+        
+        if not pin:
+            return jsonify({'success': False, 'error': 'PIN required'})
+        
+        # Hash the entered PIN
+        pin_hash = hashlib.sha256(pin.encode()).hexdigest()
+        
+        # Only check super users
+        super_users = ShiftLeader.query.filter(
+            ShiftLeader.active == True,
+            ShiftLeader.is_super_user == True
+        ).all()
+        
+        for shift_leader in super_users:
+            if shift_leader.pin == pin_hash:
+                # Success - found matching PIN for super user
+                shift_leader.last_login = datetime.now()
+                db.session.commit()
+                
+                log_settings_access(shift_leader.name, 'Leave/Overtime Access Granted', True, request.remote_addr)
+                return jsonify({
+                    'success': True,
+                    'name': shift_leader.name,
+                    'is_super_user': True,
+                    'user_type': 'Super User'
+                })
+        
+        # No matching PIN found or not authorized
+        log_settings_access('Unknown User', 'Leave/Overtime Access Attempt - Invalid/Unauthorized PIN', False, request.remote_addr)
+        return jsonify({'success': False, 'error': 'Invalid PIN or unauthorized access. Only Super Users can access this section.'})
+        
+    except Exception as e:
+        print(Fore.RED + f"Error verifying leave PIN: {e}")
+        log_settings_access('Unknown', f'Leave/Overtime Access Error: {str(e)}', False, request.remote_addr)
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/overtime', methods=['GET', 'POST'])
+def overtime():
+    """Handle overtime entries - GET: list all, POST: create new (super user only)"""
+    if request.method == 'POST':
+        try:
+            # Verify super user authentication
+            pin = request.headers.get('X-Super-User-PIN')
+            if not pin:
+                return jsonify({'success': False, 'error': 'Super user PIN required'}), 401
+            
+            # Verify PIN is for super user
+            pin_hash = hashlib.sha256(pin.encode()).hexdigest()
+            super_user = ShiftLeader.query.filter(
+                ShiftLeader.pin == pin_hash,
+                ShiftLeader.active == True,
+                ShiftLeader.is_super_user == True
+            ).first()
+            
+            if not super_user:
+                return jsonify({'success': False, 'error': 'Unauthorized. Super user access required.'}), 403
+            
+            data = request.json
+            if not data:
+                return jsonify({'success': False, 'error': 'No data provided'}), 400
+            
+            # Validate required fields
+            if 'staff_name' not in data or not data.get('staff_name'):
+                return jsonify({'success': False, 'error': 'Staff name is required'}), 400
+            
+            if 'date' not in data or not data.get('date'):
+                return jsonify({'success': False, 'error': 'Date is required'}), 400
+            
+            if 'hours' not in data or data.get('hours') is None or data.get('hours') == '':
+                return jsonify({'success': False, 'error': 'Hours is required'}), 400
+            
+            # Validate and parse date
+            try:
+                date_obj = datetime.strptime(data['date'], '%Y-%m-%d').date()
+            except (ValueError, TypeError) as e:
+                return jsonify({'success': False, 'error': f'Invalid date format. Use YYYY-MM-DD: {str(e)}'}), 400
+            
+            # Validate and parse hours
+            try:
+                hours_value = float(data['hours'])
+                if hours_value < 0:
+                    return jsonify({'success': False, 'error': 'Hours must be a positive number'}), 400
+            except (ValueError, TypeError) as e:
+                return jsonify({'success': False, 'error': f'Invalid hours value. Must be a number: {str(e)}'}), 400
+            
+            # Create overtime entry
+            overtime_entry = Overtime(
+                staff_name=data['staff_name'],
+                date=date_obj,
+                hours=hours_value,
+                description=data.get('description', ''),
+                created_by=super_user.name
+            )
+            db.session.add(overtime_entry)
+            db.session.commit()
+            
+            return jsonify({'success': True, 'id': overtime_entry.id})
+            
+        except Exception as e:
+            db.session.rollback()
+            error_msg = str(e)
+            print(Fore.RED + f"Error saving overtime entry: {error_msg}")
+            return jsonify({'success': False, 'error': f'Error saving overtime entry: {error_msg}'}), 500
+    
+    # GET request - filter by date range and staff
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    staff_name = request.args.get('staff_name')
+    
+    query = Overtime.query
+    
+    if start_date:
+        query = query.filter(Overtime.date >= datetime.strptime(start_date, '%Y-%m-%d').date())
+    if end_date:
+        query = query.filter(Overtime.date <= datetime.strptime(end_date, '%Y-%m-%d').date())
+    if staff_name:
+        query = query.filter(Overtime.staff_name == staff_name)
+    
+    overtime_list = query.order_by(Overtime.date.desc(), Overtime.id.desc()).all()
+    
+    return jsonify({
+        'success': True,
+        'overtime': [{
+            'id': ot.id,
+            'staff_name': ot.staff_name,
+            'date': ot.date.isoformat(),
+            'hours': ot.hours,
+            'description': ot.description,
+            'created_by': ot.created_by,
+            'created_date': ot.created_date.isoformat() if ot.created_date else None
+        } for ot in overtime_list]
+    })
+
+@app.route('/api/overtime/<int:overtime_id>', methods=['PUT', 'DELETE'])
+def overtime_entry(overtime_id):
+    """Update or delete overtime entry (super user only)"""
+    # Verify super user authentication
+    pin = request.headers.get('X-Super-User-PIN')
+    if not pin:
+        return jsonify({'success': False, 'error': 'Super user PIN required'}), 401
+    
+    # Verify PIN is for super user
+    pin_hash = hashlib.sha256(pin.encode()).hexdigest()
+    super_user = ShiftLeader.query.filter(
+        ShiftLeader.pin == pin_hash,
+        ShiftLeader.active == True,
+        ShiftLeader.is_super_user == True
+    ).first()
+    
+    if not super_user:
+        return jsonify({'success': False, 'error': 'Unauthorized. Super user access required.'}), 403
+    
+    overtime_entry = Overtime.query.get(overtime_id)
+    if not overtime_entry:
+        return jsonify({'success': False, 'error': 'Overtime entry not found'}), 404
+    
+    if request.method == 'DELETE':
+        db.session.delete(overtime_entry)
+        db.session.commit()
+        return jsonify({'success': True})
+    
+    # PUT request - update
+    data = request.json
+    overtime_entry.staff_name = data.get('staff_name', overtime_entry.staff_name)
+    if 'date' in data:
+        overtime_entry.date = datetime.strptime(data['date'], '%Y-%m-%d').date()
+    if 'hours' in data:
+        overtime_entry.hours = float(data['hours'])
+    if 'description' in data:
+        overtime_entry.description = data['description']
+    overtime_entry.updated_date = datetime.now()
+    
+    db.session.commit()
+    return jsonify({'success': True})
 
 @app.route('/api/settings-access-logs', methods=['GET'])
 def get_settings_access_logs():
@@ -2528,7 +2450,9 @@ def verify_pin():
         'success': True,
         'leader': {
             'id': leader.id,
-            'name': leader.name
+            'name': leader.name,
+            'is_super_user': leader.is_super_user,
+            'user_type': 'Super User' if leader.is_super_user else 'Shift Leader'
         }
     })
 
@@ -2538,7 +2462,9 @@ def get_shift_leaders():
     leaders = ShiftLeader.query.filter_by(active=True).order_by(ShiftLeader.name).all()
     return jsonify([{
         'id': leader.id,
-        'name': leader.name
+        'name': leader.name,
+        'is_super_user': leader.is_super_user,
+        'user_type': 'Super User' if leader.is_super_user else 'Shift Leader'
     } for leader in leaders])
 
 @app.route('/api/change-pin', methods=['POST'])
@@ -2580,37 +2506,53 @@ def change_pin():
     return jsonify({'success': True, 'message': 'PIN changed successfully'})
 
 def initialize_shift_leaders():
-    """Initialize shift leaders with default PINs (default: 1234)"""
+    """Initialize shift leaders with default PINs (default: 1234) and set super users"""
     try:
         shift_leader_names = ['Ricardo', 'Arpad', 'Carlos', 'Brian', 'Kojo', 'Peter', 'Konrad']
+        super_users = ['Arpad', 'Carlos']  # Super users with special privileges
         default_pin = '1234'
         hashed_default_pin = hashlib.sha256(default_pin.encode()).hexdigest()
         
         added_count = 0
+        updated_count = 0
         for name in shift_leader_names:
             # Check if leader already exists
             existing = ShiftLeader.query.filter(
                 db.func.lower(ShiftLeader.name) == name.lower()
             ).first()
             
+            is_super = name in super_users
+            
             if not existing:
                 leader = ShiftLeader(
                     name=name,
                     pin=hashed_default_pin,
-                    active=True
+                    active=True,
+                    is_super_user=is_super
                 )
                 db.session.add(leader)
                 added_count += 1
-                print(Fore.GREEN + f"✓ Added shift leader: {name} (default PIN: {default_pin})")
+                user_type = "Super User" if is_super else "Shift Leader"
+                print(Fore.GREEN + f"✓ Added {user_type}: {name} (default PIN: {default_pin})")
+            else:
+                # Update existing leader if super user status changed
+                if existing.is_super_user != is_super:
+                    existing.is_super_user = is_super
+                    updated_count += 1
+                    user_type = "Super User" if is_super else "Shift Leader"
+                    print(Fore.CYAN + f"✓ Updated {existing.name} to {user_type}")
         
-        if added_count > 0:
+        if added_count > 0 or updated_count > 0:
             db.session.commit()
-            print(Fore.YELLOW + Style.BRIGHT + f"\n{'='*50}")
-            print(Fore.YELLOW + Style.BRIGHT + f"IMPORTANT: {added_count} shift leader(s) created with default PIN: {default_pin}")
-            print(Fore.YELLOW + Style.BRIGHT + f"Please change PINs immediately for security!")
-            print(Fore.YELLOW + Style.BRIGHT + f"{'='*50}\n")
+            if added_count > 0:
+                print(Fore.YELLOW + Style.BRIGHT + f"\n{'='*50}")
+                print(Fore.YELLOW + Style.BRIGHT + f"IMPORTANT: {added_count} user(s) created with default PIN: {default_pin}")
+                print(Fore.YELLOW + Style.BRIGHT + f"Please change PINs immediately for security!")
+                print(Fore.YELLOW + Style.BRIGHT + f"{'='*50}\n")
+            if updated_count > 0:
+                print(Fore.CYAN + f"✓ Updated {updated_count} user(s) with new privileges")
         else:
-            print(Fore.GREEN + "All shift leaders already exist in database.")
+            print(Fore.GREEN + "All shift leaders already exist in database with correct privileges.")
             
     except Exception as e:
         print(Fore.RED + f"Error initializing shift leaders: {e}")
@@ -2888,6 +2830,22 @@ def migrate_database():
                     conn.commit()
                 print(Fore.GREEN + "✓ Sender email columns added successfully!")
         
+        # Check if shift_leader table needs is_super_user column
+        if 'shift_leader' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('shift_leader')]
+            
+            if 'is_super_user' not in columns:
+                print(Fore.CYAN + "Adding is_super_user column to shift_leader table...")
+                with db.engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE shift_leader ADD COLUMN is_super_user BOOLEAN DEFAULT 0"))
+                    conn.commit()
+                
+                # Set Arpad and Carlos as super users
+                with db.engine.connect() as conn:
+                    conn.execute(text("UPDATE shift_leader SET is_super_user = 1 WHERE LOWER(name) IN ('arpad', 'carlos')"))
+                    conn.commit()
+                print(Fore.GREEN + "✓ Super user column added and Arpad/Carlos set as super users!")
+        
         # Check if cctv_fault table needs new detailed fields
         if 'cctv_fault' in inspector.get_table_names():
             columns = [col['name'] for col in inspector.get_columns('cctv_fault')]
@@ -2903,9 +2861,85 @@ def migrate_database():
                     conn.commit()
                 print(Fore.GREEN + "✓ CCTV/Intercom fault detailed fields added successfully!")
         
-        # Create all tables if they don't exist (includes ActivityLog)
+        # Create all tables if they don't exist (includes ActivityLog and any new models)
         db.create_all()
         print(Fore.GREEN + "✓ Tables created/verified successfully!")
+        
+        # Refresh inspector after create_all to check for new tables
+        inspector = inspect(db.engine)
+        
+        # Check if overtime table exists and has correct schema
+        if 'overtime' not in inspector.get_table_names():
+            print(Fore.CYAN + "Creating overtime table...")
+            with db.engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE TABLE overtime (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        staff_name VARCHAR(100) NOT NULL,
+                        date DATE NOT NULL,
+                        hours FLOAT NOT NULL,
+                        description TEXT,
+                        created_by VARCHAR(100),
+                        created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_date DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.commit()
+            print(Fore.GREEN + "✓ Overtime table created successfully!")
+        else:
+            # Check if overtime table has required columns (especially staff_name)
+            columns = [col['name'] for col in inspector.get_columns('overtime')]
+            required_columns = ['staff_name', 'date', 'hours', 'description', 'created_by', 'created_date', 'updated_date']
+            
+            missing_columns = [col for col in required_columns if col not in columns]
+            
+            if missing_columns:
+                print(Fore.CYAN + f"Overtime table missing required columns: {missing_columns}")
+                print(Fore.CYAN + "Recreating overtime table with correct schema...")
+                try:
+                    # Try to backup existing data if we can read it
+                    with db.engine.connect() as conn:
+                        try:
+                            # Get column names from existing table to try to preserve data
+                            existing_cols = [col['name'] for col in inspector.get_columns('overtime')]
+                            backup_data = []
+                            if existing_cols:
+                                # Try to select what we can
+                                select_cols = ', '.join([col for col in existing_cols if col in ['id', 'date', 'hours', 'description', 'created_by', 'created_date', 'updated_date']])
+                                if select_cols:
+                                    result = conn.execute(text(f"SELECT {select_cols} FROM overtime"))
+                                    backup_data = [dict(row._mapping) for row in result]
+                                    print(Fore.CYAN + f"Found {len(backup_data)} existing overtime entries to preserve")
+                        except Exception as backup_error:
+                            print(Fore.YELLOW + f"⚠ Could not backup existing data: {backup_error}")
+                            backup_data = []
+                    
+                    # Drop and recreate table
+                    with db.engine.connect() as conn:
+                        conn.execute(text("DROP TABLE IF EXISTS overtime"))
+                        conn.execute(text("""
+                            CREATE TABLE overtime (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                staff_name VARCHAR(100) NOT NULL,
+                                date DATE NOT NULL,
+                                hours FLOAT NOT NULL,
+                                description TEXT,
+                                created_by VARCHAR(100),
+                                created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                updated_date DATETIME DEFAULT CURRENT_TIMESTAMP
+                            )
+                        """))
+                        conn.commit()
+                    print(Fore.GREEN + "✓ Overtime table recreated successfully!")
+                    
+                    if backup_data:
+                        print(Fore.YELLOW + "⚠ Note: Existing overtime entries were not automatically migrated due to schema change.")
+                        print(Fore.YELLOW + "   Please re-enter any lost entries manually.")
+                except Exception as recreate_error:
+                    print(Fore.RED + f"✗ Error recreating overtime table: {recreate_error}")
+                    print(Fore.YELLOW + "   You may need to manually fix the database schema.")
+            else:
+                print(Fore.GREEN + "✓ Overtime table already exists with correct schema")
         
         # Verify ActivityLog table was created
         if 'activity_log' in inspector.get_table_names():
