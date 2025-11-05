@@ -1,242 +1,517 @@
-# Google Drive Backup Setup Guide
+# 📚 Google Drive Backup Setup Tutorial
 
-This guide will help you set up automatic daily backups of your Diary database to Google Drive.
-
-## Overview
-
-The system automatically backs up your database to Google Drive at 2 AM every day, keeping only the latest copy. If your PC dies, your data is safe in Google Drive.
+Complete step-by-step guide to set up automatic daily backups of your Diary database to Google Drive.
 
 ---
 
-## Setup Steps
+## 🎯 What This Does
 
-### Step 1: Create Google Cloud Project
+- **Automatic daily backups** at 2:00 AM
+- **Keeps only the latest backup** (saves space)
+- **Secure** - uses Google service accounts (no personal credentials)
+- **Offsite backup** - protects your data if your PC fails
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Click **Select a Project** at the top, then **New Project**
-3. Enter a project name (e.g., "Diary Backup")
-4. Click **Create**
-5. Wait for the project to be created, then select it
+---
 
-### Step 2: Enable Google Drive API
+## ✅ Prerequisites
 
-1. In your Google Cloud Project, go to **APIs & Services** > **Library**
-2. Search for **Google Drive API**
-3. Click on it and press **Enable**
-4. Wait for it to enable (takes a few seconds)
+Before starting, make sure you have:
 
-### Step 3: Create Service Account
-
-1. Go to **APIs & Services** > **Credentials**
-2. Click **+ CREATE CREDENTIALS** at the top
-3. Select **Service Account**
-4. Fill in the details:
-   - **Service account name**: `diary-backup` (or any name you prefer)
-   - **Service account ID**: Will auto-fill
-   - **Description**: "Automated diary database backup"
-5. Click **CREATE AND CONTINUE**
-6. Skip the optional steps by clicking **DONE**
-
-### Step 4: Create Service Account Key (Credentials)
-
-1. On the **Credentials** page, find your new service account in the list
-2. Click on the service account email address
-3. Go to the **KEYS** tab
-4. Click **ADD KEY** > **Create new key**
-5. Select **JSON** format
-6. Click **CREATE**
-7. A JSON file will download automatically - this is your credentials file
-
-### Step 5: Install Credentials File
-
-1. Rename the downloaded JSON file to exactly: `service_account.json`
-2. Move it to your Diary application folder (same folder as `app.py`)
-3. **IMPORTANT**: Never share this file or commit it to git (it's already in .gitignore)
-
-### Step 6: Get Service Account Email
-
-1. Open the `service_account.json` file with a text editor
-2. Find the line with `"client_email"` - it looks like:
-   ```json
-   "client_email": "diary-backup@your-project.iam.gserviceaccount.com"
+1. ✅ **Python packages installed** - Install required Google Drive libraries:
+   ```bash
+   pip install google-auth==2.25.2 google-auth-oauthlib==1.2.0 google-auth-httplib2==0.2.0 google-api-python-client==2.110.0
    ```
-3. Copy this email address
+   Or install all requirements at once:
+   ```bash
+   pip install -r docs/requirements.txt
+   ```
 
-### Step 7: Share Google Drive Folder with Service Account
+2. ✅ **Google account** - You need a Google account (Gmail account works)
 
-**Option A: Let the app create the folder (Recommended)**
+3. ✅ **Internet connection** - Required for backups to work
 
-1. Start your Diary application
-2. The app will automatically create a `Diary_Backups` folder in the service account's Google Drive
-3. You won't see this folder in YOUR Google Drive (it's in the service account's Drive)
-
-**Option B: Use your own Google Drive folder**
-
-If you want to see the backups in YOUR Google Drive:
-
-1. Go to [Google Drive](https://drive.google.com/)
-2. Create a new folder called `Diary_Backups`
-3. Right-click the folder > **Share**
-4. Paste the service account email address from Step 6
-5. Set permission to **Editor**
-6. Uncheck "Notify people"
-7. Click **Share**
+4. ✅ **15-20 minutes** - Time needed to complete the setup
 
 ---
 
-## Verification
+## 📋 Quick Setup Checklist
 
-### Test the Backup
+- [ ] Install Python packages (Prerequisites section above)
+- [ ] Create Google Cloud Project
+- [ ] Enable Google Drive API
+- [ ] Create Service Account
+- [ ] Download credentials JSON file
+- [ ] Place `service_account.json` in project folder
+- [ ] (Optional) Share folder in your Google Drive
+- [ ] Test backup manually
 
-1. Make sure `service_account.json` is in your Diary folder
-2. Start the Diary application: `python app.py`
-3. Look for startup messages in the console
-4. In your web browser, go to the Settings tab
-5. Look for a "Backup to Google Drive" button (if you added one to the UI)
-6. OR wait until 2 AM for the automatic backup to run
+---
 
-### Check Console Messages
+## 🚀 Step-by-Step Setup
 
-Successful backup will show:
+### Step 1: Install Required Packages
+
+**Open PowerShell or Command Prompt** in your project folder and run:
+
+```bash
+pip install google-auth==2.25.2 google-auth-oauthlib==1.2.0 google-auth-httplib2==0.2.0 google-api-python-client==2.110.0
+```
+
+**Verify installation:**
+```bash
+python -c "import google.auth; print('✓ Google auth installed')"
+python -c "from googleapiclient.discovery import build; print('✓ Google API client installed')"
+```
+
+---
+
+### Step 2: Create Google Cloud Project
+
+1. Go to **[Google Cloud Console](https://console.cloud.google.com/)**
+   - Sign in with your Google account if prompted
+
+2. Click **"Select a Project"** dropdown at the top of the page
+   - It may show "My First Project" or "No project selected"
+
+3. Click **"New Project"** button
+
+4. Fill in the form:
+   - **Project name:** `Diary Backup` (or any name you like)
+   - **Location:** Leave default (No organization)
+
+5. Click **"Create"** button
+   - Wait 10-20 seconds for the project to be created
+
+6. **Select your new project** from the project dropdown (top of page)
+   - Make sure it shows your project name
+
+---
+
+### Step 3: Enable Google Drive API
+
+1. In your Google Cloud Project, look for the left sidebar menu (☰ hamburger icon)
+   - Click it if the menu is collapsed
+
+2. Navigate to: **APIs & Services** → **Library**
+   - Or go directly to: https://console.cloud.google.com/apis/library
+
+3. In the search box at the top, type: **"Google Drive API"**
+
+4. Click on **"Google Drive API"** from the search results
+
+5. Click the blue **"ENABLE"** button
+   - Wait a few seconds for it to enable
+   - You should see "API enabled" confirmation
+
+6. You're done! The API is now enabled for your project.
+
+---
+
+### Step 4: Create Service Account
+
+A service account is a special type of Google account that applications can use (not a real person).
+
+1. Still in Google Cloud Console, go to: **APIs & Services** → **Credentials**
+   - Or directly: https://console.cloud.google.com/apis/credentials
+
+2. Click the **"+ CREATE CREDENTIALS"** button at the top of the page
+
+3. Select **"Service Account"** from the dropdown menu
+
+4. Fill in the service account details:
+   - **Service account name:** `diary-backup` (or any name)
+   - **Service account ID:** Auto-filled (don't change)
+   - **Description:** `Automated diary database backup`
+
+5. Click **"CREATE AND CONTINUE"**
+
+6. **Skip optional steps:**
+   - Click **"SKIP"** or **"CONTINUE"** for Grant access (optional)
+   - Click **"DONE"** to finish
+
+7. You should now see your service account listed on the Credentials page.
+
+---
+
+### Step 5: Download Credentials (JSON Key File)
+
+This JSON file contains the credentials your app needs to access Google Drive.
+
+1. On the **Credentials** page, find your service account in the list
+   - It will show an email like: `diary-backup@your-project.iam.gserviceaccount.com`
+
+2. **Click on the service account email address** (the blue clickable link)
+
+3. You're now in the Service Account details page. Click the **"KEYS"** tab
+
+4. Click **"ADD KEY"** → **"Create new key"**
+
+5. In the popup:
+   - Select **JSON** format (radio button)
+   - Click **"CREATE"**
+
+6. **A JSON file will automatically download** to your Downloads folder
+   - File name will be something like: `your-project-12345-abc123.json`
+
+---
+
+### Step 6: Install Credentials File
+
+1. **Find the downloaded JSON file** in your Downloads folder
+
+2. **Rename it** to exactly: `service_account.json`
+   - Remove any project ID or random numbers from the filename
+   - The name must match exactly
+
+3. **Move the file** to your Diary application folder
+   - It should be in the same folder as `app.py`
+   - Example location: `C:\Users\YourName\Desktop\Project\Diary\service_account.json`
+
+4. **Verify the file is in the correct location:**
+   ```
+   Your Project Folder/
+   ├── app.py
+   ├── config.py
+   ├── service_account.json  ← Should be here
+   ├── instance/
+   └── ...
+   ```
+
+⚠️ **SECURITY WARNING:** Never share this file! It gives access to your Google Drive backups.
+
+---
+
+### Step 7: Get Service Account Email
+
+You'll need this email address for the optional step of sharing a folder in your own Google Drive.
+
+1. **Open `service_account.json`** with Notepad or any text editor
+
+2. **Find the line** that looks like:
+   ```json
+   "client_email": "diary-backup@your-project-12345.iam.gserviceaccount.com"
+   ```
+
+3. **Copy the entire email address** (the part in quotes after `client_email`)
+   - Example: `diary-backup@your-project-12345.iam.gserviceaccount.com`
+   - Keep this handy for the next step
+
+---
+
+### Step 8: Choose Backup Location (Two Options)
+
+#### Option A: Automatic Folder (Recommended - Easiest)
+
+**What happens:** The app creates a folder in the service account's Google Drive. You won't see it in your personal Drive, but backups work automatically.
+
+**Steps:**
+1. **Do nothing!** Just make sure `service_account.json` is in your project folder
+2. Start your Diary app
+3. The app automatically creates `Diary_Backups` folder on first backup
+4. **You're done!**
+
+**Pros:** ✅ Easiest setup, no extra steps  
+**Cons:** ❌ You can't see the backup in your own Google Drive
+
+---
+
+#### Option B: Use Your Own Google Drive Folder (Recommended for Visibility)
+
+**What happens:** Backups are stored in a folder in YOUR Google Drive that you can see and access.
+
+**Steps:**
+
+1. Go to **[Google Drive](https://drive.google.com/)**
+   - Sign in if needed
+
+2. Click **"+ New"** button → **"Folder"**
+
+3. Name the folder: `Diary_Backups`
+   - Click **"Create"**
+
+4. **Right-click** the new `Diary_Backups` folder → Click **"Share"**
+
+5. In the sharing dialog:
+   - Paste the service account email from Step 7
+   - Change permission dropdown to **"Editor"**
+   - **Uncheck** "Notify people" (important - no need to notify a service account)
+   - Click **"Share"** or **"Send"**
+
+6. You should see the service account email listed under "People with access"
+
+**Pros:** ✅ You can see backups in your Drive, easy to download  
+**Cons:** ❌ Extra setup step required
+
+---
+
+## ✅ Testing the Setup
+
+### Test 1: Verify File Location
+
+1. Check that `service_account.json` is in your project root folder (same folder as `app.py`)
+2. Verify the filename is exactly `service_account.json` (not `service_account.json.txt` or anything else)
+
+### Test 2: Manual Backup Test
+
+1. **Start your Diary application:**
+   ```bash
+   python app.py
+   ```
+
+2. **Open the web interface** in your browser: `http://localhost:5000`
+
+3. **Go to Settings tab**
+
+4. **Look for console output** when the app starts:
+   - ✅ Success: No error messages about `service_account.json`
+   - ❌ Error: Red text saying "service_account.json not found"
+
+5. **Trigger a manual backup:**
+   - Option A: Use the web interface if there's a backup button
+   - Option B: Make a POST request using curl or Postman:
+     ```bash
+     curl -X POST http://localhost:5000/api/backup-to-gdrive
+     ```
+   - Option C: Wait for automatic backup at 2:00 AM
+
+### Test 3: Check Success Messages
+
+**Successful backup shows in console:**
 ```
 ✓ Database backed up to Google Drive successfully!
   File: diary_latest.db
-  Size: X.XX KB
+  Size: 245.67 KB
   Folder: Diary_Backups
   Only latest backup kept (old backups deleted)
 ```
 
-Failed backup will show:
+**Failed backup shows:**
 ```
 ✗ Google Drive backup failed: service_account.json not found
+  Please follow instructions in GOOGLE_DRIVE_SETUP.md to set up credentials
 ```
 
-### Check Google Drive
+### Test 4: Verify in Google Drive (Option B only)
 
-**If using your own folder (Option B):**
-- Go to [Google Drive](https://drive.google.com/)
-- Open the `Diary_Backups` folder
-- You should see `diary_latest.db` file
-- Each new backup replaces the old one
-
-**If using service account's Drive (Option A):**
-- You won't see the folder in your Drive (it's in the service account's Drive)
-- Trust the console messages to confirm backups are working
+If you used Option B (your own folder):
+1. Go to [Google Drive](https://drive.google.com/)
+2. Open the `Diary_Backups` folder
+3. You should see: `diary_latest.db` file
+4. Check the file size matches what was shown in console
 
 ---
 
-## Scheduled Backup Times
+## 📅 When Backups Run
 
-The system runs these automated tasks:
+The system automatically runs:
 
-- **2:00 AM** - Google Drive backup (keeps only latest copy)
-- **3:00 AM** - Cleanup old leave data (older than 2 years)
+- **2:00 AM daily** - Google Drive backup (keeps only latest copy)
+- **3:00 AM daily** - Cleanup old leave data (older than 2 years)
 - **Your chosen time** - Send daily report email
 
----
-
-## Troubleshooting
-
-### Error: "service_account.json not found"
-
-**Solution:** Make sure the `service_account.json` file is in the same folder as `app.py`
-
-### Error: "Permission denied" or "Insufficient permissions"
-
-**Solution:** 
-1. Make sure you completed Step 2 (Enable Google Drive API)
-2. If using your own folder (Option B), make sure you shared it with the service account email
-3. Check that the service account has **Editor** permissions
-
-### Error: "Invalid credentials"
-
-**Solution:**
-1. Download a new JSON key file from Google Cloud Console
-2. Replace the old `service_account.json` with the new one
-3. Restart the application
-
-### Backup worked once, then stopped working
-
-**Solution:**
-1. Check your internet connection
-2. Check if the Google Cloud Project is still active
-3. Check if the Service Account key was deleted or disabled in Google Cloud Console
-
-### I don't see the backup folder in my Google Drive
-
-**Solution:**
-- If you didn't do Step 7 Option B (sharing with your Drive), the folder exists only in the service account's Drive
-- To see it in YOUR Drive, follow Step 7 Option B
-- Alternatively, trust the console messages - if it says "backed up successfully", it worked
+You can also trigger **manual backups anytime** via:
+- Web interface (if you add a backup button)
+- API endpoint: `POST http://localhost:5000/api/backup-to-gdrive`
 
 ---
 
-## File Locations
+## 🔧 Troubleshooting
 
-### Local Files
-- Database: `instance/diary.db`
-- Credentials: `service_account.json` (in project root)
-- This guide: `GOOGLE_DRIVE_SETUP.md`
+### ❌ Error: "service_account.json not found"
+
+**Problem:** The credentials file is missing or in the wrong location.
+
+**Solution:**
+1. Check the file exists in the same folder as `app.py`
+2. Verify filename is exactly `service_account.json` (case-sensitive)
+3. Make sure it's not `service_account.json.txt` (Windows sometimes hides extensions)
+4. Check file path: Should be `C:\Users\YourName\Desktop\Project\Diary\service_account.json`
+
+---
+
+### ❌ Error: "Permission denied" or "Insufficient permissions"
+
+**Problem:** Service account doesn't have access to Google Drive.
+
+**Solution:**
+1. Verify you completed Step 3 (Enable Google Drive API)
+2. If using Option B (your own folder), check:
+   - Folder is shared with the service account email
+   - Permission is set to **Editor** (not Viewer)
+   - Service account email matches exactly (copy-paste to avoid typos)
+
+---
+
+### ❌ Error: "Invalid credentials"
+
+**Problem:** The JSON file is corrupted or from a different project.
+
+**Solution:**
+1. Go back to Google Cloud Console → Credentials
+2. Delete the old key (if needed) and create a new one
+3. Download a fresh JSON file
+4. Replace `service_account.json` with the new file
+5. Restart the application
+
+---
+
+### ❌ Error: "ModuleNotFoundError: No module named 'google'"
+
+**Problem:** Python packages not installed.
+
+**Solution:**
+```bash
+pip install google-auth==2.25.2 google-auth-oauthlib==1.2.0 google-auth-httplib2==0.2.0 google-api-python-client==2.110.0
+```
+
+---
+
+### ❌ Backup worked once, then stopped working
+
+**Problem:** Service account key deleted, project disabled, or network issue.
+
+**Solution:**
+1. Check internet connection
+2. Verify Google Cloud Project is still active
+3. Check if Service Account key was deleted in Google Cloud Console
+4. Try downloading a new credentials file
+5. Check console for specific error messages
+
+---
+
+### ❌ "I don't see the backup folder in my Google Drive"
+
+**Problem:** You're using Option A (automatic folder), which stores backups in the service account's Drive, not yours.
+
+**Solution:**
+1. This is normal! Option A stores backups in the service account's Drive
+2. To see backups in YOUR Drive, follow Step 8 Option B
+3. Alternatively, trust the console messages - if it says "backed up successfully", it worked
+4. You can restore by downloading the file programmatically if needed
+
+---
+
+### ❌ Backup fails silently with no error message
+
+**Problem:** Connection issue or API quota exceeded.
+
+**Solution:**
+1. Check internet connection
+2. Verify Google Drive API is enabled (Step 3)
+3. Check Google Cloud Console for API quota limits
+4. Try manual backup to see detailed error message
+5. Check Windows Firewall isn't blocking the connection
+
+---
+
+## 📁 File Locations
+
+### Local Files (Your Computer)
+- **Database:** `instance/diary.db`
+- **Credentials:** `service_account.json` (in project root, same folder as `app.py`)
+- **This guide:** `docs/GOOGLE_DRIVE_SETUP.md`
 
 ### Google Drive
-- Backup folder: `Diary_Backups/`
-- Backup file: `diary_latest.db` (always the most recent)
+- **Backup folder:** `Diary_Backups/` (created automatically)
+- **Backup file:** `diary_latest.db` (always the most recent - old backups are deleted)
 
 ---
 
-## Security Notes
+## 🔒 Security Notes
 
 ⚠️ **IMPORTANT SECURITY INFORMATION:**
 
-1. **Never share `service_account.json`** - This file gives full access to your Google Drive backup folder
-2. **Never commit to git** - The file is already in `.gitignore` to prevent this
-3. **Keep backups secure** - The database contains your diary data
-4. **Service account only** - The service account can ONLY access folders you explicitly share with it
+1. **Never share `service_account.json`**
+   - This file gives full access to your Google Drive backup folder
+   - Don't email it, don't upload it anywhere public
+
+2. **Already protected**
+   - The file is in `.gitignore` to prevent accidental git commits
+   - Keep it secure on your computer only
+
+3. **Service account permissions**
+   - The service account can ONLY access folders you explicitly share with it
+   - It has no access to your other Google Drive files
+
+4. **Database security**
+   - Your database contains diary data - backups are encrypted in transit (HTTPS)
+   - Only you (and the service account) have access
 
 ---
 
-## Restoring from Backup
+## 🔄 Restoring from Backup
 
-If your PC dies and you need to restore:
+If your PC crashes and you need to restore your data:
 
-1. Install the Diary application on a new PC
-2. Download `diary_latest.db` from your Google Drive `Diary_Backups` folder
-3. Place it in the `instance/` folder as `diary.db`
-4. Start the application - all your data is restored!
+1. **Install the Diary application** on your new PC
+   - Follow normal installation instructions
 
----
+2. **Set up Google Drive backup again** (Steps 1-6 above)
+   - Or reuse your existing `service_account.json` if you have it
 
-## Manual Backup
+3. **Download the backup file:**
+   - If using Option B: Go to Google Drive → `Diary_Backups` → Download `diary_latest.db`
+   - If using Option A: You'll need to use Google Drive API or create a new backup setup
 
-You can also trigger a manual backup anytime:
+4. **Replace the database:**
+   - Place `diary_latest.db` in the `instance/` folder
+   - Rename it to `diary.db`
+   - Location: `instance/diary.db`
 
-1. Use the web interface (if you add a backup button)
-2. OR make a POST request to: `http://127.0.0.1:5000/api/backup-to-gdrive`
-
----
-
-## Support
-
-If you encounter issues:
-
-1. Check the console for colored error messages (red = error, yellow = warning)
-2. Verify all steps above were completed
-3. Try a manual backup to see detailed error messages
-4. Check Google Cloud Console to ensure the project and API are active
+5. **Start the application** - All your data is restored! 🎉
 
 ---
 
-## Database Size Information
+## 📊 Database Size Information
 
-Based on your usage (10 diary entries/day, 24 temperature readings/day):
+Your database is very small:
 
-- **After 1 year:** ~1.6 MB
+- **After 1 year:** ~1.6 MB (with 10 entries/day + 24 temperature readings/day)
 - **After 5 years:** ~8-9 MB
 - **After 10 years:** ~16-17 MB
 
-Google Drive free tier (15 GB) can easily store thousands of years of data!
+**Google Drive free tier:** 15 GB  
+**Your usage:** Even after 10 years, you're using less than 0.1% of free storage!
+
+You can backup thousands of years of data with the free tier. 😊
 
 ---
 
-**Setup Complete!** Your database will now automatically backup to Google Drive at 2 AM every day, keeping only the latest copy. 🎉
+## 🎉 Setup Complete!
 
+Congratulations! Your database will now automatically backup to Google Drive at 2:00 AM every day.
+
+**What happens next:**
+- ✅ Backups run automatically every night at 2:00 AM
+- ✅ Only the latest backup is kept (saves space)
+- ✅ Your data is safe in the cloud
+- ✅ No action needed from you
+
+**To verify it's working:**
+- Check console messages when backup runs
+- Or trigger a manual backup via the API endpoint
+
+**Need help?** Check the Troubleshooting section above or review the error messages in your console.
+
+---
+
+## 📞 Additional Help
+
+**Common Issues:**
+- Red error messages in console = Check Troubleshooting section
+- Yellow warning messages = Usually informational (can often be ignored)
+- Green success messages = Everything working correctly
+
+**Manual Backup API:**
+- Endpoint: `POST http://localhost:5000/api/backup-to-gdrive`
+- Returns: JSON with `success: true/false` and message/error
+
+**Check Google Cloud Console:**
+- Project status: https://console.cloud.google.com/
+- API status: https://console.cloud.google.com/apis/library
+- Credentials: https://console.cloud.google.com/apis/credentials
+
+---
+
+**Last Updated:** November 2024  
+**Guide Version:** 2.0

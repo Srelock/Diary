@@ -35,10 +35,15 @@ google-auth-httplib2==0.2.0     # HTTP library integration
 google-api-python-client==2.110.0  # Google Drive API client
 
 # ========================================
+# Security
+bcrypt>=4.0.1              # Secure password hashing (recommended for PIN storage)
+
+# ========================================
 # Built-in Python modules used (no install needed):
 # - smtplib (email sending)
 # - email.mime.* (email formatting)
-# - hashlib (password hashing)
+# - hashlib (password hashing - fallback if bcrypt unavailable)
+# - hmac (constant-time comparison for security)
 # - webbrowser (auto-open browser)
 # - threading (background tasks)
 # - subprocess (PDF printing)

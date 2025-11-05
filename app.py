@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
@@ -6,40 +6,228 @@ import csv
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
-import json
 import hashlib
+import hmac
 import webbrowser
 import threading
 import signal
 import sys
-from colorama import init, Fore, Back, Style
+import time
+from functools import wraps
+from collections import defaultdict
+from colorama import init, Fore, Style
+
+# Try to import bcrypt for secure PIN hashing, fallback to hashlib if not available
+try:
+    import bcrypt
+    BCrypt_AVAILABLE = True
+except ImportError:
+    BCrypt_AVAILABLE = False
+    print(Fore.YELLOW + "⚠️ Warning: bcrypt not available. Install with: pip install bcrypt")
+    print(Fore.YELLOW + "⚠️ Using SHA-256 (less secure). Consider upgrading.")
 
 # Initialize colorama for Windows console colors
 init(autoreset=True)
 
-# Import configuration from config.py
-try:
-    from config import EMAIL_CONFIG
-    print(Fore.GREEN + "✓ Email configuration loaded from config.py")
-except ImportError:
-    print(Fore.YELLOW + "⚠️ Warning: config.py not found, using default email configuration")
-    EMAIL_CONFIG = {
-        'smtp_server': 'smtp.gmail.com',
-        'smtp_port': 587,
-        'email': 'your-email@gmail.com',
-        'password': 'your-app-password',
-        'recipient': 'recipient@example.com'
-    }
+# ===== PIN HASHING AND VERIFICATION =====
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///diary.db'
+def hash_pin(pin):
+    """Hash a PIN using bcrypt (if available) or SHA-256 as fallback"""
+    if BCrypt_AVAILABLE:
+        # bcrypt requires bytes
+        return bcrypt.hashpw(pin.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    else:
+        # Fallback to SHA-256 (less secure but compatible)
+        return hashlib.sha256(pin.encode()).hexdigest()
+
+def verify_pin_hash(pin, hashed):
+    """Verify a PIN against its hash using secure comparison"""
+    if not hashed:
+        return False
+    
+    if BCrypt_AVAILABLE and (hashed.startswith('$2a$') or hashed.startswith('$2b$') or hashed.startswith('$2y$')):
+        # bcrypt hash (starts with $2a$, $2b$, or $2y$)
+        try:
+            return bcrypt.checkpw(pin.encode('utf-8'), hashed.encode('utf-8'))
+        except Exception as e:
+            print(Fore.RED + f"Error verifying bcrypt PIN: {e}")
+            return False
+    else:
+        # SHA-256 hash - use constant-time comparison
+        pin_hash = hashlib.sha256(pin.encode()).hexdigest()
+        return hmac.compare_digest(pin_hash, hashed)
+
+# ===== RATE LIMITING =====
+
+# Rate limiting storage (in-memory, resets on restart)
+rate_limit_storage = defaultdict(list)
+
+def rate_limit(max_attempts=5, window=300):
+    """
+    Rate limiting decorator to prevent brute force attacks
+    max_attempts: Maximum number of attempts allowed
+    window: Time window in seconds
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # Get client identifier (IP address)
+            client_id = request.remote_addr
+            current_time = time.time()
+            
+            # Clean up old attempts outside the time window
+            rate_limit_storage[client_id] = [
+                attempt_time for attempt_time in rate_limit_storage[client_id]
+                if current_time - attempt_time < window
+            ]
+            
+            # Check if rate limit exceeded
+            if len(rate_limit_storage[client_id]) >= max_attempts:
+                return jsonify({
+                    'success': False,
+                    'error': f'Too many attempts. Please try again in {window // 60} minutes.'
+                }), 429  # HTTP 429 Too Many Requests
+            
+            # Record this attempt
+            rate_limit_storage[client_id].append(current_time)
+            
+            # Call the original function
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+def get_base_path():
+    """Get the base path for the application - works for both script and compiled .exe"""
+    if getattr(sys, 'frozen', False):
+        # Running as compiled .exe
+        return os.path.dirname(sys.executable)
+    else:
+        # Running as script
+        return os.path.dirname(os.path.abspath(__file__))
+
+def get_resource_path(relative_path):
+    """Get absolute path to resource, works for dev and PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
+
+# Get base path for application (must be defined before loading config)
+BASE_PATH = get_base_path()
+
+# Import configuration from config.py
+def load_email_config():
+    """Load email configuration from config.py, handling both script and .exe modes"""
+    config_path = os.path.join(BASE_PATH, 'config.py')
+    
+    # If config.py doesn't exist, try to create it from config.example.py
+    if not os.path.exists(config_path):
+        example_config_path = None
+        
+        # Try to find config.example.py
+        if getattr(sys, 'frozen', False):
+            # Running as compiled .exe - check bundled location first
+            try:
+                example_config_path = get_resource_path('config.example.py')
+                if not os.path.exists(example_config_path):
+                    # Fallback to same directory as .exe
+                    example_config_path = os.path.join(BASE_PATH, 'config.example.py')
+            except:
+                example_config_path = os.path.join(BASE_PATH, 'config.example.py')
+        else:
+            # Running as script - check same directory
+            example_config_path = os.path.join(BASE_PATH, 'config.example.py')
+        
+        # If config.example.py exists, copy it to config.py
+        if example_config_path and os.path.exists(example_config_path):
+            try:
+                import shutil
+                shutil.copy2(example_config_path, config_path)
+                print(Fore.GREEN + f"✓ Created config.py from config.example.py")
+                print(Fore.YELLOW + "⚠️ Please update config.py with your email credentials!")
+            except Exception as e:
+                print(Fore.YELLOW + f"⚠️ Could not create config.py from example: {e}")
+                print(Fore.YELLOW + "⚠️ Using default email configuration")
+                return {
+                    'smtp_server': 'smtp.gmail.com',
+                    'smtp_port': 587,
+                    'email': 'your-email@gmail.com',
+                    'password': 'your-app-password',
+                    'recipient': 'recipient@example.com'
+                }
+        else:
+            print(Fore.YELLOW + f"⚠️ config.py not found at {config_path}")
+            print(Fore.YELLOW + "⚠️ config.example.py also not found")
+            print(Fore.YELLOW + "⚠️ Using default email configuration")
+            return {
+                'smtp_server': 'smtp.gmail.com',
+                'smtp_port': 587,
+                'email': 'your-email@gmail.com',
+                'password': 'your-app-password',
+                'recipient': 'recipient@example.com'
+            }
+    
+    # Add base path to sys.path if not already there (for .exe mode)
+    if BASE_PATH not in sys.path:
+        sys.path.insert(0, BASE_PATH)
+    
+    # Try importing config first
+    try:
+        from config import EMAIL_CONFIG
+        print(Fore.GREEN + "✓ Email configuration loaded from config.py")
+        return EMAIL_CONFIG
+    except ImportError as import_err:
+        # If import fails, try loading the file directly
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("config", config_path)
+            config_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(config_module)
+            print(Fore.GREEN + "✓ Email configuration loaded from config.py")
+            return config_module.EMAIL_CONFIG
+        except Exception as load_err:
+            print(Fore.YELLOW + f"⚠️ Error loading config.py: {load_err}")
+            print(Fore.YELLOW + "⚠️ Using default email configuration")
+            return {
+                'smtp_server': 'smtp.gmail.com',
+                'smtp_port': 587,
+                'email': 'your-email@gmail.com',
+                'password': 'your-app-password',
+                'recipient': 'recipient@example.com'
+            }
+    except Exception as e:
+        # Other unexpected errors
+        print(Fore.YELLOW + f"⚠️ Unexpected error loading config: {e}")
+        print(Fore.YELLOW + "⚠️ Using default email configuration")
+        return {
+            'smtp_server': 'smtp.gmail.com',
+            'smtp_port': 587,
+            'email': 'your-email@gmail.com',
+            'password': 'your-app-password',
+            'recipient': 'recipient@example.com'
+        }
+
+# Load email configuration
+EMAIL_CONFIG = load_email_config()
+
+# Ensure required directories exist
+instance_dir = os.path.join(BASE_PATH, 'instance')
+os.makedirs(instance_dir, exist_ok=True)
+templates_dir = os.path.join(BASE_PATH, 'templates')
+os.makedirs(templates_dir, exist_ok=True)
+
+# Initialize Flask app
+app = Flask(__name__, template_folder=templates_dir)
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(instance_dir, "diary.db")}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -295,11 +483,14 @@ def send_daily_report(report_date=None):
         if report_date is None:
             report_date = datetime.now().date()
         
+        # Convert date to datetime for proper comparison with timestamp column
+        start_datetime = datetime.combine(report_date, datetime.min.time())
+        end_datetime = datetime.combine(report_date + timedelta(days=1), datetime.min.time())
+        
         # Get occurrences for the specified date
-        next_day = report_date + timedelta(days=1)
         occurrences = DailyOccurrence.query.filter(
-            DailyOccurrence.timestamp >= report_date,
-            DailyOccurrence.timestamp < next_day,
+            DailyOccurrence.timestamp >= start_datetime,
+            DailyOccurrence.timestamp < end_datetime,
             DailyOccurrence.sent == False
         ).all()
         
@@ -307,24 +498,25 @@ def send_daily_report(report_date=None):
         pdf_path = generate_daily_pdf(occurrences, report_date)
         csv_path = generate_daily_csv(occurrences, report_date)
         
-        # Log the email FIRST (before sending) to prevent duplicate sends on retry
-        email_log = EmailLog(
-            recipient=settings.recipient_email,
-            subject=f"Daily Report - {report_date}",
-            pdf_path=pdf_path  # Saved locally, not emailed
-        )
-        db.session.add(email_log)
-        db.session.commit()
-        
-        # Send email with HTML styling (no PDF attachment)
-        email_sent = send_email_with_pdf(pdf_path, f"Daily Report - {report_date}", settings.recipient_email)
+        # Send email FIRST - only log if successful
+        email_sent = send_email(f"Daily Report - {report_date}", settings.recipient_email)
         
         if email_sent:
+            # Log the email only after successful send
+            email_log = EmailLog(
+                recipient=settings.recipient_email,
+                subject=f"Daily Report - {report_date}",
+                pdf_path=pdf_path  # Saved locally, not emailed
+            )
+            db.session.add(email_log)
+            
             # Mark as sent if there were occurrences and email succeeded
             if occurrences:
                 for occurrence in occurrences:
                     occurrence.sent = True
-                db.session.commit()
+            
+            # Single commit for both email log and sent status
+            db.session.commit()
             
             print(Fore.GREEN + f"Daily report sent successfully for {report_date}")
             print(Fore.CYAN + f"Local backups saved - PDF: {pdf_path}, CSV: {csv_path}")
@@ -336,15 +528,18 @@ def send_daily_report(report_date=None):
         return email_sent
     except Exception as e:
         print(Fore.RED + f"Error sending daily report: {e}")
+        # Rollback any uncommitted database changes
+        try:
+            db.session.rollback()
+        except Exception as rollback_error:
+            print(Fore.YELLOW + f"Warning: Error during database rollback: {rollback_error}")
         return False
 
 def generate_daily_pdf(occurrences, report_date=None):
     """Generate PDF report of daily occurrences"""
-    from reportlab.lib.pagesizes import letter
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
-    from reportlab.lib import colors
     
     # Use provided date or default to today
     if report_date is None:
@@ -352,10 +547,11 @@ def generate_daily_pdf(occurrences, report_date=None):
     
     # Filename uses report date, with time suffix to avoid overwriting
     filename = f"daily_report_{report_date.strftime('%Y%m%d')}_{datetime.now().strftime('%H%M%S')}.pdf"
-    filepath = os.path.join('reports', 'PDF', filename)
+    reports_pdf_dir = os.path.join(BASE_PATH, 'reports', 'PDF')
+    filepath = os.path.join(reports_pdf_dir, filename)
     
     # Create reports/PDF directory if it doesn't exist
-    os.makedirs(os.path.join('reports', 'PDF'), exist_ok=True)
+    os.makedirs(reports_pdf_dir, exist_ok=True)
     
     doc = SimpleDocTemplate(filepath, pagesize=letter)
     styles = getSampleStyleSheet()
@@ -656,10 +852,11 @@ def generate_daily_csv(occurrences, report_date=None):
     
     # Filename uses report date, with time suffix to avoid overwriting
     filename = f"daily_report_{report_date.strftime('%Y%m%d')}_{datetime.now().strftime('%H%M%S')}.csv"
-    filepath = os.path.join('reports', 'CSV', filename)
+    reports_csv_dir = os.path.join(BASE_PATH, 'reports', 'CSV')
+    filepath = os.path.join(reports_csv_dir, filename)
     
     # Create reports/CSV directory if it doesn't exist
-    os.makedirs(os.path.join('reports', 'CSV'), exist_ok=True)
+    os.makedirs(reports_csv_dir, exist_ok=True)
     
     # Get date and staff schedule info for the report
     today = report_date
@@ -790,8 +987,9 @@ def generate_email_html(occurrences, report_date=None):
         WaterTemperature.timestamp <= today_end
     ).order_by(WaterTemperature.time_recorded).all()
     
-    # Build HTML email
-    html = f"""<!DOCTYPE html>
+    # Build HTML email using list for efficient string building
+    html_parts = []
+    html_parts.append(f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -820,7 +1018,7 @@ def generate_email_html(occurrences, report_date=None):
                             <div style="background: #e0f2f7; border: 2px solid #dee2e6; border-radius: 8px; padding: 20px 15px; text-align: center;">
                                 <div style="font-weight: bold; font-size: 14px; color: #000; margin-bottom: 15px; background: #cce7f0; padding: 8px; border-radius: 4px;">SHIFT 1</div>
                                 <div style="font-size: 12px; color: #666; margin-bottom: 15px;">(7am-2pm / 2pm-10pm)</div>
-"""
+""")
     
     # Add Shift 1 staff
     if shift1_staff:
@@ -845,7 +1043,7 @@ def generate_email_html(occurrences, report_date=None):
                 status_bg = '#d4edda'
                 status_color = '#155724'
             
-            html += f"""
+            html_parts.append(f"""
                                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px;">
                                     <tr>
                                         <td style="text-align: left; padding: 8px 0; border-bottom: 1px solid #b8d4e0;">
@@ -856,11 +1054,11 @@ def generate_email_html(occurrences, report_date=None):
                                         </td>
                                     </tr>
                                 </table>
-"""
+""")
     else:
-        html += '<div style="font-size: 13px; color: #666;">No staff assigned</div>'
+        html_parts.append('<div style="font-size: 13px; color: #666;">No staff assigned</div>')
     
-    html += """
+    html_parts.append("""
                             </div>
                         </td>
                         
@@ -869,7 +1067,7 @@ def generate_email_html(occurrences, report_date=None):
                             <div style="background: #e0f2f7; border: 2px solid #dee2e6; border-radius: 8px; padding: 20px 15px; text-align: center;">
                                 <div style="font-weight: bold; font-size: 14px; color: #000; margin-bottom: 15px; background: #cce7f0; padding: 8px; border-radius: 4px;">SHIFT 2</div>
                                 <div style="font-size: 12px; color: #666; margin-bottom: 15px;">(2pm-10pm / 7am-2pm)</div>
-"""
+""")
     
     # Add Shift 2 staff
     if shift2_staff:
@@ -893,7 +1091,7 @@ def generate_email_html(occurrences, report_date=None):
                 status_bg = '#d4edda'
                 status_color = '#155724'
             
-            html += f"""
+            html_parts.append(f"""
                                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px;">
                                     <tr>
                                         <td style="text-align: left; padding: 8px 0; border-bottom: 1px solid #b8d4e0;">
@@ -904,11 +1102,11 @@ def generate_email_html(occurrences, report_date=None):
                                         </td>
                                     </tr>
                                 </table>
-"""
+""")
     else:
-        html += '<div style="font-size: 13px; color: #666;">No staff assigned</div>'
+        html_parts.append('<div style="font-size: 13px; color: #666;">No staff assigned</div>')
     
-    html += """
+    html_parts.append("""
                             </div>
                         </td>
                         
@@ -917,7 +1115,7 @@ def generate_email_html(occurrences, report_date=None):
                             <div style="background: #e0f2f7; border: 2px solid #dee2e6; border-radius: 8px; padding: 20px 15px; text-align: center;">
                                 <div style="font-weight: bold; font-size: 14px; color: #000; margin-bottom: 15px; background: #cce7f0; padding: 8px; border-radius: 4px;">NIGHT SHIFT</div>
                                 <div style="font-size: 12px; color: #666; margin-bottom: 15px;">(10pm-7am)</div>
-"""
+""")
     
     # Add Night Shift staff
     if night_shift_staff:
@@ -941,7 +1139,7 @@ def generate_email_html(occurrences, report_date=None):
                 status_bg = '#d4edda'
                 status_color = '#155724'
             
-            html += f"""
+            html_parts.append(f"""
                                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px;">
                                     <tr>
                                         <td style="text-align: left; padding: 8px 0; border-bottom: 1px solid #b8d4e0;">
@@ -952,11 +1150,11 @@ def generate_email_html(occurrences, report_date=None):
                                         </td>
                                     </tr>
                                 </table>
-"""
+""")
     else:
-        html += '<div style="font-size: 13px; color: #666;">No staff assigned</div>'
+        html_parts.append('<div style="font-size: 13px; color: #666;">No staff assigned</div>')
     
-    html += """
+    html_parts.append("""
                             </div>
                         </td>
                     </tr>
@@ -966,17 +1164,17 @@ def generate_email_html(occurrences, report_date=None):
             <!-- Daily Occurrences Section -->
             <div style="margin-bottom: 30px;">
                 <h2 style="color: #2c3e50; font-size: 1.5em; margin-bottom: 20px; border-bottom: 2px solid #007bff; padding-bottom: 10px;">Daily Occurrences</h2>
-"""
+""")
     
     # Add occurrences table or "no occurrences" message
     if not occurrences or len(occurrences) == 0:
-        html += """
+        html_parts.append("""
                 <div style="background: #d4edda; color: #155724; padding: 20px; border-radius: 8px; text-align: center; font-size: 1.1em;">
                     No incidents or occurrences were recorded today.
                 </div>
-"""
+""")
     else:
-        html += """
+        html_parts.append("""
                 <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
                     <thead>
                         <tr>
@@ -987,30 +1185,30 @@ def generate_email_html(occurrences, report_date=None):
                         </tr>
                     </thead>
                     <tbody>
-"""
+""")
         
         for occurrence in occurrences:
-            html += f"""
+            html_parts.append(f"""
                         <tr>
                             <td style="padding: 12px 10px; border: 2px solid #dee2e6; text-align: center; background: white;">{occurrence.time}</td>
                             <td style="padding: 12px 10px; border: 2px solid #dee2e6; text-align: center; background: white;">{occurrence.flat_number}</td>
                             <td style="padding: 12px 10px; border: 2px solid #dee2e6; text-align: center; background: white;">{occurrence.reported_by}</td>
                             <td style="padding: 12px 10px; border: 2px solid #dee2e6; text-align: left; background: white;">{occurrence.description}</td>
                         </tr>
-"""
+""")
         
-        html += """
+        html_parts.append("""
                     </tbody>
                 </table>
-"""
+""")
     
-    html += """
+    html_parts.append("""
             </div>
             
             <!-- Water Temperature Section -->
             <div style="margin-bottom: 30px;">
                 <h2 style="color: #2c3e50; font-size: 1.5em; margin-bottom: 20px; border-bottom: 2px solid #007bff; padding-bottom: 10px;">Water Temperature Readings</h2>
-"""
+""")
     
     # Add water temperature readings
     if water_temps and len(water_temps) > 0:
@@ -1025,19 +1223,19 @@ def generate_email_html(occurrences, report_date=None):
         
         temp_text = ", ".join(temp_entries)
         
-        html += f"""
+        html_parts.append(f"""
                 <div style="background: white; border: 2px solid #dee2e6; border-radius: 8px; padding: 20px; font-size: 1em; line-height: 1.6;">
                     {temp_text}
                 </div>
-"""
+""")
     else:
-        html += """
+        html_parts.append("""
                 <div style="background: #f8f9fa; color: #6c757d; padding: 20px; border-radius: 8px; text-align: center; font-size: 1.1em;">
                     No water temperature readings recorded today.
                 </div>
-"""
+""")
     
-    html += """
+    html_parts.append("""
             </div>
             
         </div>
@@ -1045,13 +1243,24 @@ def generate_email_html(occurrences, report_date=None):
     </div>
 </body>
 </html>
-"""
+""")
     
-    return html
+    return ''.join(html_parts)
 
 
-def send_email_with_pdf(pdf_path, subject, recipient=None):
-    """Send email with PDF attachment - supports multiple recipients"""
+def send_email(subject, recipient=None):
+    """Send email with HTML content - supports multiple recipients"""
+    # Ensure we're in app context (needed for scheduler jobs)
+    # Check if we're in app context by trying to access current_app
+    try:
+        from flask import current_app
+        current_app._get_current_object()  # This will raise RuntimeError if no context
+    except RuntimeError:
+        # Not in app context, need to wrap
+        with app.app_context():
+            return send_email(subject, recipient)
+    
+    server = None  # Initialize server variable for proper cleanup
     try:
         # Get email settings from database
         settings = ScheduleSettings.query.first()
@@ -1087,11 +1296,12 @@ def send_email_with_pdf(pdf_path, subject, recipient=None):
         except:
             report_date = datetime.now().date()
         
-        # Get occurrences for the report date
-        next_day = report_date + timedelta(days=1)
+        # Get occurrences for the report date - convert date to datetime for proper comparison
+        start_datetime = datetime.combine(report_date, datetime.min.time())
+        end_datetime = datetime.combine(report_date + timedelta(days=1), datetime.min.time())
         occurrences = DailyOccurrence.query.filter(
-            DailyOccurrence.timestamp >= report_date,
-            DailyOccurrence.timestamp < next_day
+            DailyOccurrence.timestamp >= start_datetime,
+            DailyOccurrence.timestamp < end_datetime
         ).all()
         
         msg = MIMEMultipart()
@@ -1103,21 +1313,38 @@ def send_email_with_pdf(pdf_path, subject, recipient=None):
         html_body = generate_email_html(occurrences, report_date)
         msg.attach(MIMEText(html_body, 'html'))
         
-        # Note: PDF attachment removed as per user request - email contains only HTML styling
-        
         # Send email to all recipients
         server = smtplib.SMTP(smtp_server, smtp_port)
         server.starttls()
         server.login(sender_email, sender_password)
         text = msg.as_string()
         server.sendmail(sender_email, recipients, text)  # Send to list of recipients
-        server.quit()
+        
+        # Close connection gracefully - wrap in try-except to handle any errors
+        try:
+            server.quit()
+            server = None  # Mark as closed only after successful quit
+        except Exception as quit_error:
+            # If quit() fails, let finally block handle cleanup
+            print(Fore.YELLOW + f"Warning: Error during email server quit: {quit_error}")
         
         print(Fore.GREEN + f"Email sent successfully from {sender_email} to: {', '.join(recipients)}")
         return True
     except Exception as e:
         print(Fore.RED + f"Error sending email: {e}")
         return False
+    finally:
+        # Ensure connection is always closed, even if an error occurred
+        if server is not None:
+            try:
+                server.quit()  # Try graceful close first
+            except:
+                try:
+                    server.close()  # Force close if quit() fails
+                except:
+                    pass  # Ignore errors during cleanup
+            finally:
+                server = None  # Always mark as closed after cleanup attempt
 
 # Routes
 @app.route('/')
@@ -1127,34 +1354,44 @@ def index():
 @app.route('/api/daily-occurrences', methods=['GET', 'POST'])
 def daily_occurrences():
     if request.method == 'POST':
-        data = request.json
-        occurrence = DailyOccurrence(
-            time=data['time'],
-            flat_number=data['flat_number'],
-            reported_by=data['reported_by'],
-            description=data['description']
-        )
-        db.session.add(occurrence)
-        db.session.commit()
-        return jsonify({'success': True, 'id': occurrence.id})
+        try:
+            data = request.json
+            occurrence = DailyOccurrence(
+                time=data['time'],
+                flat_number=data['flat_number'],
+                reported_by=data['reported_by'],
+                description=data['description']
+            )
+            db.session.add(occurrence)
+            db.session.commit()
+            return jsonify({'success': True, 'id': occurrence.id})
+        except Exception as e:
+            db.session.rollback()
+            print(Fore.RED + f"Error creating daily occurrence: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     # GET request - return today's occurrences
-    today = datetime.now().date()
-    tomorrow = datetime.combine(today + timedelta(days=1), datetime.min.time())
-    
-    occurrences = DailyOccurrence.query.filter(
-        DailyOccurrence.timestamp >= today,
-        DailyOccurrence.timestamp < tomorrow
-    ).order_by(DailyOccurrence.timestamp.desc()).all()
-    
-    return jsonify([{
-        'id': o.id,
-        'time': o.time,
-        'flat_number': o.flat_number,
-        'reported_by': o.reported_by,
-        'description': o.description,
-        'timestamp': o.timestamp.isoformat()
-    } for o in occurrences])
+    try:
+        today = datetime.now().date()
+        tomorrow = datetime.combine(today + timedelta(days=1), datetime.min.time())
+        
+        occurrences = DailyOccurrence.query.filter(
+            DailyOccurrence.timestamp >= today,
+            DailyOccurrence.timestamp < tomorrow
+        ).order_by(DailyOccurrence.timestamp.desc()).all()
+        
+        return jsonify([{
+            'id': o.id,
+            'time': o.time,
+            'flat_number': o.flat_number,
+            'reported_by': o.reported_by,
+            'description': o.description,
+            'timestamp': o.timestamp.isoformat()
+        } for o in occurrences])
+    except Exception as e:
+        print(Fore.RED + f"Error fetching daily occurrences: {e}")
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/daily-occurrences/<int:occurrence_id>', methods=['DELETE'])
 def delete_daily_occurrence(occurrence_id):
@@ -1176,18 +1413,23 @@ def delete_daily_occurrence(occurrence_id):
 @app.route('/api/staff-rota', methods=['GET', 'POST'])
 def staff_rota():
     if request.method == 'POST':
-        data = request.json
-        rota = StaffRota(
-            date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
-            staff_name=data['staff_name'],
-            shift_start=data.get('shift_start'),
-            shift_end=data.get('shift_end'),
-            status=data.get('status', 'working'),
-            notes=data.get('notes')
-        )
-        db.session.add(rota)
-        db.session.commit()
-        return jsonify({'success': True, 'id': rota.id})
+        try:
+            data = request.json
+            rota = StaffRota(
+                date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
+                staff_name=data['staff_name'],
+                shift_start=data.get('shift_start'),
+                shift_end=data.get('shift_end'),
+                status=data.get('status', 'working'),
+                notes=data.get('notes')
+            )
+            db.session.add(rota)
+            db.session.commit()
+            return jsonify({'success': True, 'id': rota.id})
+        except Exception as e:
+            db.session.rollback()
+            print(Fore.RED + f"Error creating staff rota entry: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     # GET request
     start_date = request.args.get('start_date', datetime.now().date().isoformat())
@@ -1546,31 +1788,36 @@ def porter_rota():
 @app.route('/api/cctv-faults', methods=['GET', 'POST'])
 def cctv_faults():
     if request.method == 'POST':
-        data = request.json
-        # Build location string from components for backwards compatibility
-        location_parts = []
-        if data.get('flat_number'):
-            location_parts.append(f"Flat {data['flat_number']}")
-        if data.get('block_number'):
-            location_parts.append(f"Block {data['block_number']}")
-        if data.get('floor_number'):
-            location_parts.append(f"Floor {data['floor_number']}")
-        location_string = ' | '.join(location_parts) if location_parts else data.get('location', '')
-        
-        fault = CCTVFault(
-            fault_type=data['fault_type'],
-            flat_number=data.get('flat_number', ''),
-            block_number=data.get('block_number', ''),
-            floor_number=data.get('floor_number', ''),
-            location=location_string,
-            description=data['description'],
-            contact_details=data.get('contact_details', ''),
-            additional_notes=data.get('additional_notes', ''),
-            status=data.get('status', 'open')
-        )
-        db.session.add(fault)
-        db.session.commit()
-        return jsonify({'success': True, 'id': fault.id})
+        try:
+            data = request.json
+            # Build location string from components for backwards compatibility
+            location_parts = []
+            if data.get('flat_number'):
+                location_parts.append(f"Flat {data['flat_number']}")
+            if data.get('block_number'):
+                location_parts.append(f"Block {data['block_number']}")
+            if data.get('floor_number'):
+                location_parts.append(f"Floor {data['floor_number']}")
+            location_string = ' | '.join(location_parts) if location_parts else data.get('location', '')
+            
+            fault = CCTVFault(
+                fault_type=data['fault_type'],
+                flat_number=data.get('flat_number', ''),
+                block_number=data.get('block_number', ''),
+                floor_number=data.get('floor_number', ''),
+                location=location_string,
+                description=data['description'],
+                contact_details=data.get('contact_details', ''),
+                additional_notes=data.get('additional_notes', ''),
+                status=data.get('status', 'open')
+            )
+            db.session.add(fault)
+            db.session.commit()
+            return jsonify({'success': True, 'id': fault.id})
+        except Exception as e:
+            db.session.rollback()
+            print(Fore.RED + f"Error creating CCTV fault: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     # GET request
     faults = CCTVFault.query.order_by(CCTVFault.timestamp.desc()).all()
@@ -1592,23 +1839,28 @@ def cctv_faults():
 @app.route('/api/water-temperature', methods=['GET', 'POST'])
 def water_temperature():
     if request.method == 'POST':
-        data = request.json
-        # Validate temperature input
-        if not data.get('temperature') or data['temperature'] == '':
-            return jsonify({'success': False, 'error': 'Temperature is required'}), 400
-        
         try:
-            temperature_value = float(data['temperature'])
-        except (ValueError, TypeError):
-            return jsonify({'success': False, 'error': 'Invalid temperature value'}), 400
-        
-        temp = WaterTemperature(
-            temperature=temperature_value,
-            time_recorded=data['time']
-        )
-        db.session.add(temp)
-        db.session.commit()
-        return jsonify({'success': True, 'id': temp.id})
+            data = request.json
+            # Validate temperature input
+            if not data.get('temperature') or data['temperature'] == '':
+                return jsonify({'success': False, 'error': 'Temperature is required'}), 400
+            
+            try:
+                temperature_value = float(data['temperature'])
+            except (ValueError, TypeError):
+                return jsonify({'success': False, 'error': 'Invalid temperature value'}), 400
+            
+            temp = WaterTemperature(
+                temperature=temperature_value,
+                time_recorded=data['time']
+            )
+            db.session.add(temp)
+            db.session.commit()
+            return jsonify({'success': True, 'id': temp.id})
+        except Exception as e:
+            db.session.rollback()
+            print(Fore.RED + f"Error creating water temperature entry: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     # GET request with optional date range parameters
     date_from = request.args.get('date_from')
@@ -1816,21 +2068,20 @@ def test_email():
         print(Fore.CYAN + f"PDF generated for local backup: {pdf_path}")
         print(Fore.CYAN + f"CSV generated for local backup: {csv_path}")
         
-        # Send test email with HTML styling (no PDF attachment)
-        print(Fore.CYAN + f"Attempting to send HTML email (no PDF attachment)...")
-        email_sent = send_email_with_pdf(
-            pdf_path, 
+        # Send test email with HTML styling
+        print(Fore.CYAN + f"Attempting to send HTML email...")
+        email_sent = send_email(
             f"TEST - Daily Report - {today}", 
             settings.recipient_email
         )
         
         if email_sent:
             occurrence_count = len(occurrences) if occurrences else 0
-            print(Fore.GREEN + f"✓ HTML email sent successfully (no PDF attachment)!")
+            print(Fore.GREEN + f"✓ HTML email sent successfully!")
             print(Fore.CYAN + Style.BRIGHT + f"{'='*50}\n")
             return jsonify({
                 'success': True,
-                'message': f'Test email sent successfully to {settings.recipient_email}!\n\nEmail includes:\n- Beautiful HTML styling\n- {occurrence_count} occurrence(s)\n- Staff schedule in 3 columns\n- Water temperature readings\n\nNo PDF attachment (as requested)\n\nCheck your inbox!',
+                'message': f'Test email sent successfully to {settings.recipient_email}!\n\nEmail includes:\n- Beautiful HTML styling\n- {occurrence_count} occurrence(s)\n- Staff schedule in 3 columns\n- Water temperature readings\n\nCheck your inbox!',
                 'count': occurrence_count
             })
         else:
@@ -1907,7 +2158,7 @@ def manual_backup_to_gdrive():
 def log_settings_access(staff_name, action, success, ip_address=None):
     """Log all settings access attempts to a file"""
     try:
-        log_dir = 'logs'
+        log_dir = os.path.join(BASE_PATH, 'logs')
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, 'settings_access.log')
         
@@ -1945,7 +2196,7 @@ def log_activity(user_name, action_type, entity_type, description, entity_id=Non
 def log_shutdown(reason="Normal shutdown"):
     """Log application shutdown to a text file"""
     try:
-        log_dir = 'logs'
+        log_dir = os.path.join(BASE_PATH, 'logs')
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, 'shutdown_log.txt')
         
@@ -1962,7 +2213,7 @@ def log_shutdown(reason="Normal shutdown"):
 def log_startup():
     """Log application startup to a text file"""
     try:
-        log_dir = 'logs'
+        log_dir = os.path.join(BASE_PATH, 'logs')
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, 'shutdown_log.txt')
         
@@ -1977,6 +2228,7 @@ def log_startup():
         print(Fore.RED + f"Error logging startup: {e}")
 
 @app.route('/api/verify-settings-pin', methods=['POST'])
+@rate_limit(max_attempts=5, window=300)
 def verify_settings_pin():
     """Verify PIN for settings access - checks all shift leaders"""
     try:
@@ -1986,14 +2238,11 @@ def verify_settings_pin():
         if not pin:
             return jsonify({'success': False, 'error': 'PIN required'})
         
-        # Hash the entered PIN
-        pin_hash = hashlib.sha256(pin.encode()).hexdigest()
-        
-        # Check all active shift leaders for matching PIN
+        # Check all active shift leaders for matching PIN using secure comparison
         all_leaders = ShiftLeader.query.filter_by(active=True).all()
         
         for shift_leader in all_leaders:
-            if shift_leader.pin == pin_hash:
+            if verify_pin_hash(pin, shift_leader.pin):
                 # Success - found matching PIN
                 shift_leader.last_login = datetime.now()
                 db.session.commit()
@@ -2016,6 +2265,7 @@ def verify_settings_pin():
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/verify-leave-pin', methods=['POST'])
+@rate_limit(max_attempts=5, window=300)
 def verify_leave_pin():
     """Verify PIN for leave/overtime access - only super users allowed"""
     try:
@@ -2025,9 +2275,6 @@ def verify_leave_pin():
         if not pin:
             return jsonify({'success': False, 'error': 'PIN required'})
         
-        # Hash the entered PIN
-        pin_hash = hashlib.sha256(pin.encode()).hexdigest()
-        
         # Only check super users
         super_users = ShiftLeader.query.filter(
             ShiftLeader.active == True,
@@ -2035,7 +2282,7 @@ def verify_leave_pin():
         ).all()
         
         for shift_leader in super_users:
-            if shift_leader.pin == pin_hash:
+            if verify_pin_hash(pin, shift_leader.pin):
                 # Success - found matching PIN for super user
                 shift_leader.last_login = datetime.now()
                 db.session.commit()
@@ -2067,13 +2314,17 @@ def overtime():
             if not pin:
                 return jsonify({'success': False, 'error': 'Super user PIN required'}), 401
             
-            # Verify PIN is for super user
-            pin_hash = hashlib.sha256(pin.encode()).hexdigest()
-            super_user = ShiftLeader.query.filter(
-                ShiftLeader.pin == pin_hash,
+            # Verify PIN is for super user using secure comparison
+            super_users = ShiftLeader.query.filter(
                 ShiftLeader.active == True,
                 ShiftLeader.is_super_user == True
-            ).first()
+            ).all()
+            
+            super_user = None
+            for leader in super_users:
+                if verify_pin_hash(pin, leader.pin):
+                    super_user = leader
+                    break
             
             if not super_user:
                 return jsonify({'success': False, 'error': 'Unauthorized. Super user access required.'}), 403
@@ -2105,6 +2356,18 @@ def overtime():
                     return jsonify({'success': False, 'error': 'Hours must be a positive number'}), 400
             except (ValueError, TypeError) as e:
                 return jsonify({'success': False, 'error': f'Invalid hours value. Must be a number: {str(e)}'}), 400
+            
+            # Validate staff exists and is active
+            staff = StaffMember.query.filter_by(
+                name=data['staff_name'],
+                active=True
+            ).first()
+            
+            if not staff:
+                return jsonify({
+                    'success': False,
+                    'error': f'Staff member "{data["staff_name"]}" not found or inactive'
+                }), 400
             
             # Create overtime entry
             overtime_entry = Overtime(
@@ -2162,13 +2425,17 @@ def overtime_entry(overtime_id):
     if not pin:
         return jsonify({'success': False, 'error': 'Super user PIN required'}), 401
     
-    # Verify PIN is for super user
-    pin_hash = hashlib.sha256(pin.encode()).hexdigest()
-    super_user = ShiftLeader.query.filter(
-        ShiftLeader.pin == pin_hash,
+    # Verify PIN is for super user using secure comparison
+    super_users = ShiftLeader.query.filter(
         ShiftLeader.active == True,
         ShiftLeader.is_super_user == True
-    ).first()
+    ).all()
+    
+    super_user = None
+    for leader in super_users:
+        if verify_pin_hash(pin, leader.pin):
+            super_user = leader
+            break
     
     if not super_user:
         return jsonify({'success': False, 'error': 'Unauthorized. Super user access required.'}), 403
@@ -2200,7 +2467,7 @@ def overtime_entry(overtime_id):
 def get_settings_access_logs():
     """Get recent settings access logs"""
     try:
-        log_file = os.path.join('logs', 'settings_access.log')
+        log_file = os.path.join(BASE_PATH, 'logs', 'settings_access.log')
         
         if not os.path.exists(log_file):
             return jsonify({'logs': [], 'message': 'No access logs yet'})
@@ -2266,30 +2533,35 @@ def get_activity_logs():
 @app.route('/api/schedule-settings', methods=['GET', 'POST'])
 def schedule_settings():
     if request.method == 'POST':
-        data = request.json
-        settings = ScheduleSettings.query.first()
-        
-        if not settings:
-            settings = ScheduleSettings()
-            db.session.add(settings)
-        
-        settings.email_time = data['email_time']
-        settings.email_enabled = data['email_enabled']
-        settings.recipient_email = data['recipient_email']
-        
-        # Update sender email settings if provided
-        if 'sender_email' in data:
-            settings.sender_email = data['sender_email']
-        if 'sender_password' in data:
-            settings.sender_password = data['sender_password']
-        if 'smtp_server' in data:
-            settings.smtp_server = data['smtp_server']
-        if 'smtp_port' in data:
-            settings.smtp_port = int(data['smtp_port'])
+        try:
+            data = request.json
+            settings = ScheduleSettings.query.first()
             
-        settings.last_updated = datetime.now()
-        
-        db.session.commit()
+            if not settings:
+                settings = ScheduleSettings()
+                db.session.add(settings)
+            
+            settings.email_time = data['email_time']
+            settings.email_enabled = data['email_enabled']
+            settings.recipient_email = data['recipient_email']
+            
+            # Update sender email settings if provided
+            if 'sender_email' in data:
+                settings.sender_email = data['sender_email']
+            if 'sender_password' in data:
+                settings.sender_password = data['sender_password']
+            if 'smtp_server' in data:
+                settings.smtp_server = data['smtp_server']
+            if 'smtp_port' in data:
+                settings.smtp_port = int(data['smtp_port'])
+                
+            settings.last_updated = datetime.now()
+            
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(Fore.RED + f"Error updating schedule settings: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
         
         # Update the scheduler
         update_scheduler()
@@ -2348,23 +2620,28 @@ def email_logs():
 @app.route('/api/staff-members', methods=['GET', 'POST'])
 def staff_members():
     if request.method == 'POST':
-        data = request.json
-        user_name = data.get('user_name', 'Unknown')
-        
-        staff = StaffMember(
-            name=data['name'],
-            color=data['color'],
-            shift=data['shift'],
-            active=data.get('active', True)
-        )
-        db.session.add(staff)
-        db.session.commit()
-        
-        # Log the addition
-        description = f"Added staff member: {staff.name} - Shift {staff.shift} - {staff.color}"
-        log_activity(user_name, 'add', 'staff_member', description, staff.id, request.remote_addr)
-        
-        return jsonify({'success': True, 'id': staff.id})
+        try:
+            data = request.json
+            user_name = data.get('user_name', 'Unknown')
+            
+            staff = StaffMember(
+                name=data['name'],
+                color=data['color'],
+                shift=data['shift'],
+                active=data.get('active', True)
+            )
+            db.session.add(staff)
+            db.session.commit()
+            
+            # Log the addition
+            description = f"Added staff member: {staff.name} - Shift {staff.shift} - {staff.color}"
+            log_activity(user_name, 'add', 'staff_member', description, staff.id, request.remote_addr)
+            
+            return jsonify({'success': True, 'id': staff.id})
+        except Exception as e:
+            db.session.rollback()
+            print(Fore.RED + f"Error creating staff member: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     # GET request - return all active staff members
     staff_list = StaffMember.query.filter_by(active=True).order_by(StaffMember.shift, StaffMember.color).all()
@@ -2430,14 +2707,13 @@ def verify_pin():
     if not pin:
         return jsonify({'success': False, 'error': 'PIN is required'}), 400
     
-    # Hash the provided PIN
-    hashed_pin = hashlib.sha256(pin.encode()).hexdigest()
-    
-    # Find shift leader by PIN hash
-    leader = ShiftLeader.query.filter(
-        ShiftLeader.pin == hashed_pin,
-        ShiftLeader.active == True
-    ).first()
+    # Find shift leader by PIN using secure comparison
+    all_leaders = ShiftLeader.query.filter_by(active=True).all()
+    leader = None
+    for l in all_leaders:
+        if verify_pin_hash(pin, l.pin):
+            leader = l
+            break
     
     if not leader:
         return jsonify({'success': False, 'error': 'Invalid PIN'}), 401
@@ -2490,13 +2766,12 @@ def change_pin():
     if not leader:
         return jsonify({'success': False, 'error': 'Shift leader not found'}), 401
     
-    # Verify old PIN
-    hashed_old_pin = hashlib.sha256(old_pin.encode()).hexdigest()
-    if leader.pin != hashed_old_pin:
+    # Verify old PIN using secure comparison
+    if not verify_pin_hash(old_pin, leader.pin):
         return jsonify({'success': False, 'error': 'Current PIN is incorrect'}), 401
     
-    # Update to new PIN
-    leader.pin = hashlib.sha256(new_pin.encode()).hexdigest()
+    # Update to new PIN using secure hashing
+    leader.pin = hash_pin(new_pin)
     db.session.commit()
     
     # Log the PIN change
@@ -2511,7 +2786,7 @@ def initialize_shift_leaders():
         shift_leader_names = ['Ricardo', 'Arpad', 'Carlos', 'Brian', 'Kojo', 'Peter', 'Konrad']
         super_users = ['Arpad', 'Carlos']  # Super users with special privileges
         default_pin = '1234'
-        hashed_default_pin = hashlib.sha256(default_pin.encode()).hexdigest()
+        hashed_default_pin = hash_pin(default_pin)
         
         added_count = 0
         updated_count = 0
@@ -2582,49 +2857,127 @@ def cleanup_old_leave_data():
         print(Fore.RED + f"Error cleaning up old leave data: {e}")
         db.session.rollback()
 
+def get_google_drive_credentials():
+    """Get OAuth2 credentials for Google Drive, handling token refresh and authorization"""
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request
+    import pickle
+    
+    SCOPES = ['https://www.googleapis.com/auth/drive.file']  # Limited scope for security
+    
+    creds = None
+    
+    # Get paths - token.pickle should be in same directory as .exe (user data)
+    token_path = os.path.join(BASE_PATH, 'token.pickle')
+    
+    # credentials.json should be bundled or in same directory as .exe
+    if getattr(sys, 'frozen', False):
+        # Running as compiled .exe - check bundled location first, then base path
+        try:
+            credentials_path = get_resource_path('credentials.json')
+            if not os.path.exists(credentials_path):
+                # Fallback to same directory as .exe
+                credentials_path = os.path.join(BASE_PATH, 'credentials.json')
+        except:
+            credentials_path = os.path.join(BASE_PATH, 'credentials.json')
+    else:
+        # Running as script
+        credentials_path = os.path.join(BASE_PATH, 'credentials.json')
+    
+    # Load existing token if available
+    if os.path.exists(token_path):
+        try:
+            with open(token_path, 'rb') as token:
+                creds = pickle.load(token)
+        except Exception as e:
+            print(Fore.YELLOW + f"  Could not load existing token: {e}")
+    
+    # If no valid credentials, try to refresh or get new ones
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                print(Fore.GREEN + "✓ Refreshed Google Drive credentials")
+            except Exception as e:
+                print(Fore.YELLOW + f"  Could not refresh token: {e}")
+                creds = None
+        
+        # If still no credentials, need user authorization
+        if not creds:
+            if not os.path.exists(credentials_path):
+                print(Fore.RED + "✗ Google Drive backup failed: credentials.json not found")
+                print(Fore.YELLOW + f"  Expected location: {credentials_path}")
+                print(Fore.YELLOW + "  Please follow instructions in GOOGLE_DRIVE_SETUP.md")
+                print(Fore.YELLOW + "  You need to create OAuth2 Client ID credentials (not service account)")
+                return None
+            
+            try:
+                flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
+                creds = flow.run_local_server(port=0, open_browser=True)
+                print(Fore.GREEN + "✓ Google Drive authorization successful!")
+                
+                # Save credentials for next time (in same directory as .exe)
+                with open(token_path, 'wb') as token:
+                    pickle.dump(creds, token)
+                print(Fore.GREEN + "✓ Credentials saved for future use")
+            except Exception as e:
+                print(Fore.RED + f"✗ Authorization failed: {e}")
+                return None
+    
+    return creds
+
 def upload_to_google_drive(file_path, file_name='diary_latest.db'):
     """Upload file to Google Drive, replacing any existing backup"""
+    service = None
+    media = None
     try:
-        from google.oauth2 import service_account
         from googleapiclient.discovery import build
         from googleapiclient.http import MediaFileUpload
         
-        # Check if service account credentials exist
-        credentials_path = 'service_account.json'
-        if not os.path.exists(credentials_path):
-            print(Fore.RED + "✗ Google Drive backup failed: service_account.json not found")
-            print(Fore.YELLOW + "  Please follow instructions in GOOGLE_DRIVE_SETUP.md to set up credentials")
+        # Get OAuth2 credentials
+        creds = get_google_drive_credentials()
+        if not creds:
             return False
         
-        # Load credentials
-        SCOPES = ['https://www.googleapis.com/auth/drive.file']
-        credentials = service_account.Credentials.from_service_account_file(
-            credentials_path, scopes=SCOPES)
-        
         # Build Drive API service
-        service = build('drive', 'v3', credentials=credentials)
+        service = build('drive', 'v3', credentials=creds)
         
-        # Search for "Diary_Backups" folder
+        # Search for "Diary_Backups" folder (in shared folders or user's drive)
         folder_name = 'Diary_Backups'
+        # Search in all accessible drives including shared folders
+        # Note: corpora='allDrives' searches in shared drives, 'user' searches user's drive including shared items
         folder_query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-        folder_results = service.files().list(q=folder_query, spaces='drive', fields='files(id, name)').execute()
+        folder_results = service.files().list(
+            q=folder_query, 
+            spaces='drive',
+            includeItemsFromAllDrives=True,
+            supportsAllDrives=True,
+            fields='files(id, name)'
+        ).execute()
         folders = folder_results.get('files', [])
         
-        # Create folder if it doesn't exist
         if not folders:
+            # Create folder if it doesn't exist (OAuth2 user credentials can create folders)
+            print(Fore.CYAN + f"  Creating '{folder_name}' folder in Google Drive...")
             folder_metadata = {
                 'name': folder_name,
                 'mimeType': 'application/vnd.google-apps.folder'
             }
-            folder = service.files().create(body=folder_metadata, fields='id').execute()
+            folder = service.files().create(body=folder_metadata, fields='id, name').execute()
             folder_id = folder.get('id')
             print(Fore.GREEN + f"✓ Created '{folder_name}' folder in Google Drive")
         else:
             folder_id = folders[0]['id']
+            print(Fore.GREEN + f"✓ Found '{folder_name}' folder in Google Drive (ID: {folder_id})")
         
         # Search for existing backup file with the same name
         file_query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
-        file_results = service.files().list(q=file_query, spaces='drive', fields='files(id, name)').execute()
+        file_results = service.files().list(
+            q=file_query, 
+            spaces='drive',
+            fields='files(id, name)'
+        ).execute()
         existing_files = file_results.get('files', [])
         
         # Delete existing backup if found
@@ -2639,7 +2992,11 @@ def upload_to_google_drive(file_path, file_name='diary_latest.db'):
             'parents': [folder_id]
         }
         media = MediaFileUpload(file_path, mimetype='application/x-sqlite3', resumable=True)
-        uploaded_file = service.files().create(body=file_metadata, media_body=media, fields='id, name, size').execute()
+        uploaded_file = service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id, name, size'
+        ).execute()
         
         file_size_kb = int(uploaded_file.get('size', 0)) / 1024
         print(Fore.GREEN + f"✓ Database backed up to Google Drive successfully!")
@@ -2655,19 +3012,51 @@ def upload_to_google_drive(file_path, file_name='diary_latest.db'):
         import traceback
         traceback.print_exc()
         return False
+    finally:
+        # Clean up resources
+        # Note: Google API client library manages HTTP connections internally
+        # Setting to None allows garbage collection to clean up connections
+        # Service object cleanup is handled by Python garbage collection
+        # HTTP connections are managed by the underlying httplib2 library
+        service = None
+        media = None
 
 def backup_database_to_gdrive():
     """Create backup of database and upload to Google Drive"""
     import shutil
     import tempfile
     
+    tmp_path = None
     try:
-        # Source database file
-        db_path = os.path.join('instance', 'diary.db')
+        # Source database file - ensure instance directory exists
+        instance_dir = os.path.join(BASE_PATH, 'instance')
+        os.makedirs(instance_dir, exist_ok=True)
+        db_path = os.path.join(instance_dir, 'diary.db')
         
         if not os.path.exists(db_path):
             print(Fore.RED + "✗ Database file not found, skipping Google Drive backup")
             return False
+        
+        # Ensure all database transactions are committed before backup
+        try:
+            db.session.commit()
+            print(Fore.CYAN + "✓ Committed pending database transactions")
+        except Exception as commit_error:
+            print(Fore.YELLOW + f"Warning: Error committing database transactions: {commit_error}")
+            db.session.rollback()
+        
+        # Close database connections to ensure file is not locked during copy
+        # For SQLite, we need to dispose the engine to close ALL connections
+        try:
+            db.session.remove()  # Close current session
+            db.engine.dispose()  # Dispose engine to close all connections (SQLite specific)
+            print(Fore.CYAN + "✓ Database connections closed")
+        except Exception as close_error:
+            print(Fore.YELLOW + f"Warning: Error closing database connections: {close_error}")
+            try:
+                db.engine.dispose()
+            except:
+                pass
         
         # Get file size for reporting
         file_size_kb = os.path.getsize(db_path) / 1024
@@ -2682,17 +3071,18 @@ def backup_database_to_gdrive():
         # Upload to Google Drive
         success = upload_to_google_drive(tmp_path, 'diary_latest.db')
         
-        # Clean up temporary file
-        try:
-            os.unlink(tmp_path)
-        except:
-            pass
-        
         return success
         
     except Exception as e:
         print(Fore.RED + f"✗ Error backing up database to Google Drive: {e}")
         return False
+    finally:
+        # Clean up temporary file - ensure it's always deleted
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except Exception as cleanup_error:
+                print(Fore.YELLOW + f"Warning: Could not delete temporary backup file: {cleanup_error}")
 
 def check_missed_reports():
     """Check for missed daily reports and send them on startup"""
@@ -2755,8 +3145,11 @@ def check_missed_reports():
 def update_scheduler():
     """Update the scheduler with new time settings"""
     try:
-        # Remove existing job
-        scheduler.remove_job('daily_report')
+        # Remove existing job if it exists
+        try:
+            scheduler.remove_job('daily_report')
+        except Exception:
+            pass  # Job doesn't exist yet, that's fine
         
         # Get new settings
         settings = ScheduleSettings.query.first()
@@ -3044,10 +3437,26 @@ if __name__ == '__main__':
     # Auto-open browser after server starts
     def open_browser():
         """Wait for server to start, then open default browser"""
+        import urllib.request
         import time
-        time.sleep(1.5)  # Give Flask time to start
-        webbrowser.open('http://127.0.0.1:5000')
-        print(Fore.GREEN + "✓ Browser opened automatically")
+        
+        url = 'http://127.0.0.1:5000'
+        max_attempts = 30  # Try for 15 seconds (30 * 0.5s)
+        
+        for attempt in range(max_attempts):
+            try:
+                # Try to connect to the server
+                urllib.request.urlopen(url, timeout=1)
+                # Server is ready!
+                webbrowser.open(url)
+                print(Fore.GREEN + "✓ Browser opened automatically")
+                return
+            except:
+                time.sleep(0.5)  # Wait 500ms before next attempt
+        
+        # Server didn't start in time
+        print(Fore.YELLOW + f"⚠️ Could not verify server is ready, opening browser anyway...")
+        webbrowser.open(url)
     
     # Start browser in background thread
     threading.Thread(target=open_browser, daemon=True).start()
