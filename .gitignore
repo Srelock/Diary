@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Config with sensitive credentials
+config.py
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Instance folder
+instance/
+*.db
+
+# Google Drive credentials
+service_account.json
+credentials.json
+token.pickle
+
+# Logs
+logs/
+*.log
+
+# Reports
+reports/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Deployment package (if you want to include it, remove this line)
+deployment_package/

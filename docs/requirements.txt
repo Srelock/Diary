@@ -1,0 +1,53 @@
+# ========================================
+# DIARY APPLICATION REQUIREMENTS
+# ========================================
+
+# Core Web Framework
+Flask==2.3.3                    # Web application framework
+Werkzeug==2.3.7                 # WSGI web application library (Flask dependency)
+
+# Database & ORM
+Flask-SQLAlchemy==3.0.5         # Flask extension for SQLAlchemy
+SQLAlchemy>=2.0.21              # SQL toolkit and Object-Relational Mapping (2.0.44+ for Python 3.13+)
+
+# Task Scheduling
+APScheduler==3.10.4             # Advanced Python Scheduler for automated daily reports
+
+# PDF Generation
+reportlab==4.0.4                # PDF document generation library
+
+# Email & Validation
+email-validator==2.0.0          # Email address validation
+
+# Date & Time Utilities
+python-dateutil==2.8.2          # Extensions to the standard datetime module
+
+# Windows Integration
+pywin32>=306                    # Python for Windows extensions (required for PDF printing)
+
+# Console Output Colorization
+colorama==0.4.6                 # Cross-platform colored terminal text
+
+# Google Drive API Integration
+google-auth==2.25.2             # Google authentication library
+google-auth-oauthlib==1.2.0     # OAuth library for Google
+google-auth-httplib2==0.2.0     # HTTP library integration
+google-api-python-client==2.110.0  # Google Drive API client
+
+# ========================================
+# Security
+bcrypt>=4.0.1              # Secure password hashing (recommended for PIN storage)
+
+# ========================================
+# Built-in Python modules used (no install needed):
+# - smtplib (email sending)
+# - email.mime.* (email formatting)
+# - hashlib (password hashing - fallback if bcrypt unavailable)
+# - hmac (constant-time comparison for security)
+# - webbrowser (auto-open browser)
+# - threading (background tasks)
+# - subprocess (PDF printing)
+# - csv (CSV report generation)
+# - json (JSON handling)
+# - os, datetime, atexit (system utilities)
+# ========================================
