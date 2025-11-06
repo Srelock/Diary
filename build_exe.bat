@@ -57,7 +57,7 @@ if errorlevel 1 (
 echo.
 echo [4/5] Building executable with PyInstaller...
 echo This may take several minutes...
-pyinstaller diary_app.spec
+python -m PyInstaller diary_app.spec
 if errorlevel 1 (
     echo.
     echo ERROR: PyInstaller build failed!
