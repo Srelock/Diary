@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 import os
 import csv
 import smtplib
+import socket
+import traceback
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from reportlab.lib.pagesizes import letter
@@ -1272,14 +1274,23 @@ def send_email(subject, recipient=None):
             smtp_server = settings.smtp_server
             smtp_port = settings.smtp_port
         else:
-            # Fallback to config.py for backwards compatibility
-            sender_email = EMAIL_CONFIG['email']
-            sender_password = EMAIL_CONFIG['password']
-            smtp_server = EMAIL_CONFIG['smtp_server']
-            smtp_port = EMAIL_CONFIG['smtp_port']
+            # Fallback to config.py - use .get() to avoid KeyError
+            sender_email = EMAIL_CONFIG.get('email', '')
+            sender_password = EMAIL_CONFIG.get('password', '')
+            smtp_server = EMAIL_CONFIG.get('smtp_server', 'smtp.gmail.com')
+            smtp_port = EMAIL_CONFIG.get('smtp_port', 587)
+        
+        # VALIDATION: Check email settings are configured
+        if not sender_email or not sender_password:
+            print(Fore.RED + "Error: Email sender credentials not configured")
+            return False
+        
+        if not smtp_server or not smtp_port:
+            print(Fore.RED + "Error: SMTP server settings not configured")
+            return False
         
         if recipient is None:
-            recipient = EMAIL_CONFIG['recipient']
+            recipient = EMAIL_CONFIG.get('recipient', '')
         
         # Parse multiple email addresses (comma or semicolon separated)
         if isinstance(recipient, str):
@@ -1287,6 +1298,11 @@ def send_email(subject, recipient=None):
             recipients = [email.strip() for email in recipient.replace(';', ',').split(',') if email.strip()]
         else:
             recipients = recipient
+        
+        # VALIDATION: Check we have at least one valid recipient
+        if not recipients:
+            print(Fore.RED + "Error: No valid recipient email addresses provided")
+            return False
             
         # Get occurrences and report date from the subject line
         # Extract date from subject like "Daily Report - 2025-10-21"
@@ -1297,52 +1313,97 @@ def send_email(subject, recipient=None):
             report_date = datetime.now().date()
         
         # Get occurrences for the report date - convert date to datetime for proper comparison
-        start_datetime = datetime.combine(report_date, datetime.min.time())
-        end_datetime = datetime.combine(report_date + timedelta(days=1), datetime.min.time())
-        occurrences = DailyOccurrence.query.filter(
-            DailyOccurrence.timestamp >= start_datetime,
-            DailyOccurrence.timestamp < end_datetime
-        ).all()
+        try:
+            start_datetime = datetime.combine(report_date, datetime.min.time())
+            end_datetime = datetime.combine(report_date + timedelta(days=1), datetime.min.time())
+            occurrences = DailyOccurrence.query.filter(
+                DailyOccurrence.timestamp >= start_datetime,
+                DailyOccurrence.timestamp < end_datetime
+            ).all()
+        except Exception as db_error:
+            print(Fore.RED + f"Database error retrieving occurrences: {db_error}")
+            return False
         
+        # Generate HTML content
+        try:
+            html_body = generate_email_html(occurrences, report_date)
+        except Exception as html_error:
+            print(Fore.RED + f"Error generating email HTML: {html_error}")
+            traceback.print_exc()
+            return False
+        
+        # Build email message
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = ', '.join(recipients)  # Display all recipients in header
         msg['Subject'] = subject
-        
-        # Generate beautiful HTML email body that matches the webpage styling
-        html_body = generate_email_html(occurrences, report_date)
         msg.attach(MIMEText(html_body, 'html'))
         
-        # Send email to all recipients
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-        server.login(sender_email, sender_password)
-        text = msg.as_string()
-        server.sendmail(sender_email, recipients, text)  # Send to list of recipients
+        # Send email to all recipients with timeout to prevent hanging
+        # Set timeout to 30 seconds for connection and operations
+        server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
         
-        # Close connection gracefully - wrap in try-except to handle any errors
         try:
-            server.quit()
-            server = None  # Mark as closed only after successful quit
-        except Exception as quit_error:
-            # If quit() fails, let finally block handle cleanup
-            print(Fore.YELLOW + f"Warning: Error during email server quit: {quit_error}")
+            server.starttls()
+            server.login(sender_email, sender_password)
+            text = msg.as_string()
+            server.sendmail(sender_email, recipients, text)  # Send to list of recipients
+            
+            # Close connection gracefully
+            try:
+                server.quit()
+                server = None  # Mark as closed only after successful quit
+            except Exception as quit_error:
+                # If quit() fails, let finally block handle cleanup
+                print(Fore.YELLOW + f"Warning: Error during email server quit: {quit_error}")
+            
+            print(Fore.GREEN + f"Email sent successfully from {sender_email} to: {', '.join(recipients)}")
+            return True
+        except Exception as smtp_error:
+            # If any SMTP operation fails, ensure we don't leave connection open
+            # The finally block will handle cleanup
+            raise  # Re-raise to be caught by outer except block
         
-        print(Fore.GREEN + f"Email sent successfully from {sender_email} to: {', '.join(recipients)}")
-        return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(Fore.RED + f"Authentication error: Invalid email or password - {e}")
+        return False
+    except smtplib.SMTPException as e:
+        print(Fore.RED + f"SMTP error sending email: {e}")
+        return False
+    except socket.timeout as e:
+        print(Fore.RED + f"Timeout error: SMTP server did not respond within 30 seconds - {e}")
+        return False
+    except (smtplib.SMTPServerDisconnected, ConnectionError, OSError) as e:
+        print(Fore.RED + f"Connection error sending email: {e}")
+        return False
+    except KeyError as e:
+        print(Fore.RED + f"Configuration error: Missing email config key - {e}")
+        return False
     except Exception as e:
-        print(Fore.RED + f"Error sending email: {e}")
+        print(Fore.RED + f"Unexpected error sending email: {e}")
+        traceback.print_exc()  # Print full traceback for debugging
         return False
     finally:
         # Ensure connection is always closed, even if an error occurred
+        # This handles cases where connection was established but operations failed
         if server is not None:
             try:
-                server.quit()  # Try graceful close first
-            except:
+                # Check if connection is still open before trying to close
                 try:
-                    server.close()  # Force close if quit() fails
+                    server.quit()  # Try graceful close first
+                except (smtplib.SMTPServerDisconnected, AttributeError):
+                    # Connection already closed or in invalid state, try force close
+                    try:
+                        server.close()  # Force close if quit() fails
+                    except (AttributeError, OSError):
+                        pass  # Connection already closed or invalid
+            except Exception as cleanup_error:
+                # Last resort: try to close if possible, ignore all errors
+                try:
+                    if hasattr(server, 'close'):
+                        server.close()
                 except:
-                    pass  # Ignore errors during cleanup
+                    pass  # Ignore all errors during final cleanup
             finally:
                 server = None  # Always mark as closed after cleanup attempt
 
