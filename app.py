@@ -225,8 +225,11 @@ EMAIL_CONFIG = load_email_config()
 # Ensure required directories exist
 instance_dir = os.path.join(BASE_PATH, 'instance')
 os.makedirs(instance_dir, exist_ok=True)
-templates_dir = os.path.join(BASE_PATH, 'templates')
-os.makedirs(templates_dir, exist_ok=True)
+
+# Templates directory - use get_resource_path for PyInstaller compatibility
+# When running as .exe, templates are in _MEIPASS temp folder
+# When running as script, templates are in project directory
+templates_dir = get_resource_path('templates')
 
 # Initialize Flask app
 app = Flask(__name__, template_folder=templates_dir)
