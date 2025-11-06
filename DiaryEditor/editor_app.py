@@ -14,7 +14,14 @@ from reportlab.lib import colors
 app = Flask(__name__)
 
 # Connect to the main Diary database using absolute path
-current_dir = os.path.dirname(os.path.abspath(__file__))
+# When running as PyInstaller exe, use executable location, not __file__
+if getattr(sys, 'frozen', False):
+    # Running as compiled .exe - use executable location
+    current_dir = os.path.dirname(sys.executable)
+else:
+    # Running as Python script
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+
 parent_dir = os.path.dirname(current_dir)
 
 # Check if we're in installed location (DiaryApp\DiaryEditor)
@@ -28,6 +35,15 @@ else:
 
 # Convert to absolute path for SQLAlchemy
 db_path = os.path.abspath(db_path)
+
+# Debug output
+print(f"Editor running from: {current_dir}")
+print(f"Looking for database at: {db_path}")
+if os.path.exists(db_path):
+    print(f"✓ Database found!")
+else:
+    print(f"✗ WARNING: Database not found at expected location!")
+    print(f"  Please ensure database exists at: {db_path}")
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)

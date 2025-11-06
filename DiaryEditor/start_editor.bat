@@ -15,13 +15,21 @@ echo Press Ctrl+C to stop the editor
 echo ========================================
 echo.
 
-REM Activate virtual environment if it exists in parent Diary folder
-if exist "..\Diary\venv\Scripts\activate.bat" (
-    call ..\Diary\venv\Scripts\activate.bat
+REM Check if standalone exe exists (installed version)
+if exist "diary_editor.exe" (
+    echo Running standalone executable...
+    diary_editor.exe
+) else if exist "dist\diary_editor.exe" (
+    echo Running standalone executable...
+    dist\diary_editor.exe
+) else (
+    echo Running Python script...
+    REM Activate virtual environment if it exists in parent Diary folder
+    if exist "..\Diary\venv\Scripts\activate.bat" (
+        call ..\Diary\venv\Scripts\activate.bat
+    )
+    python editor_app.py
 )
-
-REM Start the editor app
-python editor_app.py
 
 pause
 

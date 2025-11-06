@@ -36,7 +36,9 @@ This guide explains how to build a standalone executable and professional instal
    #define MyAppVersion "1.0.0"
    ```
 
-### Step 2: Build the Executable
+### Step 2: Build the Executables
+
+**Option A: Build All (Recommended)**
 
 1. Open Command Prompt or PowerShell
 2. Navigate to project directory:
@@ -44,25 +46,32 @@ This guide explains how to build a standalone executable and professional instal
    cd C:\Users\YourName\Desktop\project\Diary
    ```
 
-3. Run the build script:
+3. Run the master build script:
    ```cmd
-   build_exe.bat
+   build_all.bat
    ```
+   This builds both the main app and editor (takes 10-15 minutes)
 
-4. The script will:
-   - Check Python installation
-   - Install PyInstaller if needed
-   - Install all dependencies
-   - Clean previous builds
-   - Build standalone executable
-   - Output to `dist\diary_app.exe`
+**Option B: Build Individually**
 
-5. **Expected Output**:
-   ```
-   Build successful!
-   Executable location: dist\diary_app.exe
-   Size: ~100-150 MB
-   ```
+Build main app only:
+```cmd
+build_exe.bat
+```
+
+Build editor only:
+```cmd
+cd DiaryEditor
+build_editor_exe.bat
+cd ..
+```
+
+**Expected Output**:
+```
+Built executables:
+1. Main App:  dist\diary_app.exe (~100-150 MB)
+2. Editor:    DiaryEditor\dist\diary_editor.exe (~80-120 MB)
+```
 
 ### Step 3: Test the Executable (Optional but Recommended)
 

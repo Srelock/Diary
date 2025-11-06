@@ -51,8 +51,10 @@ Source: "install_tasks.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "uninstall_tasks.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "restart_service.bat"; DestDir: "{app}"; Flags: ignoreversion
 
-; DiaryEditor - Database editor tool
-Source: "DiaryEditor\*"; DestDir: "{app}\DiaryEditor"; Flags: ignoreversion recursesubdirs createallsubdirs
+; DiaryEditor - Database editor tool (standalone executable)
+Source: "DiaryEditor\dist\diary_editor.exe"; DestDir: "{app}\DiaryEditor"; Flags: ignoreversion
+Source: "DiaryEditor\start_editor.bat"; DestDir: "{app}\DiaryEditor"; Flags: ignoreversion
+Source: "DiaryEditor\README.md"; DestDir: "{app}\DiaryEditor"; Flags: ignoreversion
 
 ; Documentation (optional - if you want to include)
 ; Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme

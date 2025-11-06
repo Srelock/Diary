@@ -94,7 +94,13 @@ All changes are immediately reflected in both the main diary app and the editor.
 - Python 3.x
 - Flask
 - Flask-SQLAlchemy
+- reportlab (for PDF generation)
 - Same dependencies as main Diary app
+
+### Installation
+```cmd
+pip install Flask Flask-SQLAlchemy reportlab
+```
 
 ### Ports
 - Main Diary App: http://127.0.0.1:5000
