@@ -6,6 +6,7 @@ import csv
 import smtplib
 import socket
 import traceback
+import argparse
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from reportlab.lib.pagesizes import letter
@@ -3495,31 +3496,40 @@ if __name__ == '__main__':
         if hasattr(signal, 'SIGBREAK'):  # Windows-specific
             signal.signal(signal.SIGBREAK, handle_shutdown_signal)
     
-    # Auto-open browser after server starts
-    def open_browser():
-        """Wait for server to start, then open default browser"""
-        import urllib.request
-        import time
-        
-        url = 'http://127.0.0.1:5000'
-        max_attempts = 30  # Try for 15 seconds (30 * 0.5s)
-        
-        for attempt in range(max_attempts):
-            try:
-                # Try to connect to the server
-                urllib.request.urlopen(url, timeout=1)
-                # Server is ready!
-                webbrowser.open(url)
-                print(Fore.GREEN + "✓ Browser opened automatically")
-                return
-            except:
-                time.sleep(0.5)  # Wait 500ms before next attempt
-        
-        # Server didn't start in time
-        print(Fore.YELLOW + f"⚠️ Could not verify server is ready, opening browser anyway...")
-        webbrowser.open(url)
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Building Management Diary Application')
+    parser.add_argument('--no-browser', action='store_true', 
+                        help='Run without opening browser (for service/scheduled mode)')
+    args = parser.parse_args()
     
-    # Start browser in background thread
-    threading.Thread(target=open_browser, daemon=True).start()
+    # Auto-open browser after server starts (unless --no-browser flag is set)
+    if not args.no_browser:
+        def open_browser():
+            """Wait for server to start, then open default browser"""
+            import urllib.request
+            import time
+            
+            url = 'http://127.0.0.1:5000'
+            max_attempts = 30  # Try for 15 seconds (30 * 0.5s)
+            
+            for attempt in range(max_attempts):
+                try:
+                    # Try to connect to the server
+                    urllib.request.urlopen(url, timeout=1)
+                    # Server is ready!
+                    webbrowser.open(url)
+                    print(Fore.GREEN + "✓ Browser opened automatically")
+                    return
+                except:
+                    time.sleep(0.5)  # Wait 500ms before next attempt
+            
+            # Server didn't start in time
+            print(Fore.YELLOW + f"⚠️ Could not verify server is ready, opening browser anyway...")
+            webbrowser.open(url)
+        
+        # Start browser in background thread
+        threading.Thread(target=open_browser, daemon=True).start()
+    else:
+        print(Fore.CYAN + "Running in service mode (browser disabled)")
     
     app.run(debug=False, host='0.0.0.0', port=5000)
