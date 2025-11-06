@@ -81,7 +81,7 @@
 
         .tab-content {
             display: none;
-            padding: 30px;
+            padding: 15px 10px;
             min-height: 500px;
         }
 
@@ -279,7 +279,7 @@
         }
 
         .card-minimal-padding {
-            padding: 8px !important;
+            padding: 5px !important;
         }
 
         .card h3 {
@@ -338,7 +338,7 @@
         .incident-table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
+            margin-top: 10px;
             background: white;
             border-radius: 8px;
             overflow: hidden;
@@ -347,12 +347,12 @@
 
         .incident-table th {
             background: #e0f2f7;
-            padding: 20px 15px;
+            padding: 10px 8px;
             text-align: left;
             font-weight: 800;
             color: #000;
             border-bottom: 3px solid #dee2e6;
-            font-size: 1.2em;
+            font-size: 1.1em;
             letter-spacing: 0.5px;
         }
 
@@ -367,7 +367,7 @@
         }
 
         .incident-table td {
-            padding: 12px 10px;
+            padding: 6px 8px;
             border: 2px solid #dee2e6;
             vertical-align: top;
             background: white;
@@ -387,15 +387,17 @@
         .schedule-container {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
-            gap: 15px;
-            margin-top: 15px;
+            gap: 5px;
+            margin-top: 5px;
+            margin-left: 0;
+            margin-right: 0;
         }
 
         .shift-box {
             background: #e0f2f7;
             border: 2px solid #dee2e6;
             border-radius: 8px;
-            padding: 20px 15px;
+            padding: 5px 8px;
             text-align: center;
         }
 
@@ -414,7 +416,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 5px 0;
+            padding: 3px 0;
             border-bottom: 1px solid #b8d4e0;
         }
 
@@ -423,13 +425,13 @@
         }
 
         .staff-name {
-            font-size: 18px;
+            font-size: 22px;
             font-weight: bold;
             color: #333;
         }
 
         .staff-status {
-            font-size: 13px;
+            font-size: 15px;
             font-weight: bold;
             padding: 4px 8px;
             border-radius: 4px;
@@ -2618,14 +2620,10 @@
         <div id="daily" class="tab-content active">
             
             <!-- Staff Schedule for Today -->
-            <div class="card card-spaced card-minimal-padding">
-                <div id="todaySchedule" class="loading">Loading...</div>
-            </div>
+            <div id="todaySchedule" class="loading">Loading...</div>
             
-            <div class="card">
-                <h3 id="todayDateHeader"></h3>
-                <div id="dailyList" class="loading">Loading...</div>
-            </div>
+            <h3 id="todayDateHeader"></h3>
+            <div id="dailyList" class="loading">Loading...</div>
         </div>
 
         <!-- Staff Rota Tab -->
@@ -4732,7 +4730,6 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showAlert('Occurrence saved successfully! Data is automatically saved to local database.', 'success');
                     // Clear the form
                     document.getElementById('new_time').value = '';
                     document.getElementById('new_flat').value = '';
