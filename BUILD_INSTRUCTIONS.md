@@ -154,6 +154,12 @@ C:\Program Files\DiaryApp\
 ├── install_tasks.bat      # Task setup script
 ├── uninstall_tasks.bat    # Task cleanup script
 ├── restart_service.bat    # Daily restart script
+├── DiaryEditor\           # Database editor tool
+│   ├── editor_app.py     # Editor application
+│   ├── start_editor.bat  # Editor launcher
+│   ├── README.md         # Editor documentation
+│   └── templates\        # Editor HTML templates
+│       └── editor.html
 ├── instance\              # Database directory
 │   └── diary.db          # SQLite database (created on first run)
 ├── logs\                  # Log files
@@ -204,6 +210,27 @@ To change daily restart time from 01:00 AM:
 4. Triggers tab → Edit
 5. Change start time
 6. Click OK
+
+### Using the Database Editor
+
+The DiaryEditor tool allows you to edit past diary occurrences:
+
+1. **Launch the Editor**
+   - Start Menu → Building Management Diary → Database Editor
+   - Or run: `C:\Program Files\DiaryApp\DiaryEditor\start_editor.bat`
+
+2. **What You Can Do**
+   - View occurrences from any past date
+   - Edit existing occurrence details
+   - Add missed occurrences to past dates
+   - Delete incorrect occurrences
+
+3. **Important Notes**
+   - Runs on port 5001 (http://127.0.0.1:5001)
+   - Can run simultaneously with main app
+   - No authentication required (for authorized staff only)
+   - Changes are permanent - no undo function
+   - See `DiaryEditor\README.md` for full documentation
 
 ## Troubleshooting
 

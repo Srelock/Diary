@@ -51,6 +51,9 @@ Source: "install_tasks.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "uninstall_tasks.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "restart_service.bat"; DestDir: "{app}"; Flags: ignoreversion
 
+; DiaryEditor - Database editor tool
+Source: "DiaryEditor\*"; DestDir: "{app}\DiaryEditor"; Flags: ignoreversion recursesubdirs createallsubdirs
+
 ; Documentation (optional - if you want to include)
 ; Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
 
@@ -67,6 +70,7 @@ Name: "{app}\templates"; Permissions: users-full
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{group}\Database Editor"; Filename: "{app}\DiaryEditor\start_editor.bat"; WorkingDir: "{app}\DiaryEditor"; Comment: "Edit past diary occurrences"
 Name: "{group}\Configure Email Settings"; Filename: "notepad.exe"; Parameters: """{app}\config.py"""
 Name: "{group}\View Logs"; Filename: "{app}\logs"
 Name: "{group}\View Reports"; Filename: "{app}\reports"
