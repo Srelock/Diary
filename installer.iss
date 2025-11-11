@@ -3,8 +3,12 @@
 ; Building Management Diary Application
 ; ========================================
 
+; Read version from file (generated automatically during build)
+#define VersionFile FileOpen(SourcePath + "\version.txt")
+#define MyAppVersion Trim(FileRead(VersionFile))
+#expr FileClose(VersionFile)
+
 #define MyAppName "Building Management Diary"
-#define MyAppVersion "1.0.0"
 #define MyAppPublisher "Building Management"
 #define MyAppURL "https://github.com/Srelock/Diary"
 #define MyAppExeName "diary_app.exe"
@@ -24,7 +28,7 @@ AllowNoIcons=yes
 LicenseFile=
 OutputDir=installer_output
 OutputBaseFilename=DiaryApp_Setup
-SetupIconFile=
+SetupIconFile=diary.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -41,6 +45,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; Main executable
 Source: "dist\diary_app.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+; Application icon
+Source: "diary.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Configuration files
 Source: "config.example.py"; DestDir: "{app}"; Flags: ignoreversion
@@ -69,10 +76,10 @@ Name: "{app}\reports\CSV"; Permissions: users-full
 Name: "{app}\templates"; Permissions: users-full
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\diary.ico"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-Name: "{group}\Database Editor"; Filename: "{app}\DiaryEditor\start_editor.bat"; WorkingDir: "{app}\DiaryEditor"; Comment: "Edit past diary occurrences"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\diary.ico"; Tasks: desktopicon
+Name: "{group}\Database Editor"; Filename: "{app}\DiaryEditor\start_editor.bat"; WorkingDir: "{app}\DiaryEditor"; IconFilename: "{app}\diary.ico"; Comment: "Edit past diary occurrences"
 Name: "{group}\Configure Email Settings"; Filename: "notepad.exe"; Parameters: """{app}\config.py"""
 Name: "{group}\View Logs"; Filename: "{app}\logs"
 Name: "{group}\View Reports"; Filename: "{app}\reports"

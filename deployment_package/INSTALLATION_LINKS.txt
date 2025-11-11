@@ -1,0 +1,126 @@
+========================================
+DIRECT DOWNLOAD LINKS FOR NEW MACHINE
+========================================
+
+PYTHON DOWNLOADS (Choose ONE based on your system):
+========================================
+
+For Windows 64-bit (Recommended):
+- Python 3.8.10: https://www.python.org/ftp/python/3.8.10/python-3.8.10-amd64.exe
+- Python 3.9.13: https://www.python.org/ftp/python/3.9.13/python-3.9.13-amd64.exe
+- Python 3.10.11: https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe
+
+For Windows 32-bit (Older/Weak Systems):
+- Python 3.8.10: https://www.python.org/ftp/python/3.8.10/python-3.8.10.exe
+- Python 3.9.13: https://www.python.org/ftp/python/3.9.13/python-3.9.13.exe
+
+For Latest Python (May require more resources):
+- Python 3.11+: https://www.python.org/downloads/
+
+========================================
+INSTALLATION INSTRUCTIONS:
+========================================
+
+1. Download Python installer (use 3.8.10 for best compatibility)
+2. Run the .exe file
+3. ✅ CHECK "Add Python to PATH" (VERY IMPORTANT)
+4. ✅ CHECK "Install pip"
+5. Click "Install Now"
+6. Wait for installation (2-3 minutes)
+7. Restart computer (optional but recommended)
+8. Verify: Open Command Prompt, type: python --version
+
+========================================
+ALTERNATIVE: PYTHON FROM MICROSOFT STORE
+========================================
+
+For Windows 10/11 users:
+1. Open Microsoft Store
+2. Search "Python 3.9" or "Python 3.10"
+3. Click "Get" or "Install"
+4. Automatically adds Python to PATH
+
+========================================
+VERIFY INSTALLATION:
+========================================
+
+Open Command Prompt (cmd) and type:
+
+python --version
+  Expected output: Python 3.8.x or 3.9.x or 3.10.x
+
+python -m pip --version
+  Expected output: pip 21.x or higher
+
+========================================
+IF PYTHON COMMAND NOT FOUND:
+========================================
+
+Try these alternatives:
+- py --version
+- python3 --version
+- python.exe --version
+
+If none work:
+1. Reinstall Python
+2. Make sure to check "Add Python to PATH"
+3. Restart computer
+
+========================================
+AFTER PYTHON IS INSTALLED:
+========================================
+
+1. Copy all diary application files to new machine
+2. Open Command Prompt in diary folder
+3. Run: SETUP_APPLICATION.bat
+4. Wait for all packages to install
+5. Run: START_DIARY.bat
+6. Application will open in browser
+
+========================================
+FOR OFFLINE INSTALLATION:
+========================================
+
+If the new machine has NO internet:
+
+1. On current machine with internet:
+   - Run: pip download -r requirements.txt -d packages
+   - This creates a "packages" folder with all files
+
+2. Copy "packages" folder to new machine
+
+3. On new machine:
+   - Install Python (from USB/CD)
+   - Run: pip install --no-index --find-links=packages -r requirements.txt
+
+========================================
+TROUBLESHOOTING:
+========================================
+
+Problem: "python is not recognized"
+Solution: Reinstall Python, check "Add to PATH"
+
+Problem: Installation fails
+Solution: Run Command Prompt as Administrator
+
+Problem: Out of disk space
+Solution: Free up at least 500MB space
+
+Problem: Slow installation
+Solution: Use requirements_minimal.txt instead
+
+========================================
+SUPPORT RESOURCES:
+========================================
+
+Python Download Page:
+https://www.python.org/downloads/
+
+Python Installation Guide:
+https://docs.python.org/3/using/windows.html
+
+Pip Installation Guide:
+https://pip.pypa.io/en/stable/installation/
+
+========================================
+

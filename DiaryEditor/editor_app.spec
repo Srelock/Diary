@@ -51,7 +51,6 @@ a = Analysis(
         'bcrypt',
         'google.auth',
         'email_validator',
-        'colorama',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -81,6 +80,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon='../diary.ico',  # Application icon (use parent directory icon)
+    version='../version_info.txt',  # Windows version information
 )
 

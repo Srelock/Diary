@@ -47,7 +47,7 @@ if exist "dist" (
 )
 
 echo.
-echo [3/5] Installing/checking dependencies...
+echo [3/6] Installing/checking dependencies...
 pip install -r docs\requirements.txt
 if errorlevel 1 (
     echo WARNING: Some dependencies may have failed to install
@@ -55,7 +55,14 @@ if errorlevel 1 (
 )
 
 echo.
-echo [4/5] Building executable with PyInstaller...
+echo [4/6] Generating version information...
+python generate_version.py
+if errorlevel 1 (
+    echo WARNING: Version generation failed, using default version
+)
+
+echo.
+echo [5/6] Building executable with PyInstaller...
 echo This may take several minutes...
 python -m PyInstaller diary_app.spec
 if errorlevel 1 (
@@ -67,7 +74,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [5/5] Verifying build...
+echo [6/6] Verifying build...
 if exist "dist\diary_app.exe" (
     echo.
     echo ========================================

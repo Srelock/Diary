@@ -54,7 +54,16 @@ if errorlevel 1 (
 )
 
 echo.
-echo [4/4] Building executable with PyInstaller...
+echo [4/5] Generating version information...
+cd ..
+python generate_version.py
+cd DiaryEditor
+if errorlevel 1 (
+    echo WARNING: Version generation failed, using default version
+)
+
+echo.
+echo [5/5] Building executable with PyInstaller...
 echo This may take several minutes...
 python -m PyInstaller editor_app.spec
 if errorlevel 1 (
