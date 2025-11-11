@@ -90,7 +90,7 @@ class EmailLog(db.Model):
 
 class ScheduleSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    email_time = db.Column(db.String(5), default='18:00')  # Format: HH:MM
+    email_time = db.Column(db.String(5), default='23:59')  # Format: HH:MM
     email_enabled = db.Column(db.Boolean, default=True)
     recipient_email = db.Column(db.String(500), default='recipient@example.com')  # Support multiple emails
     # Sender email settings (configurable in Settings tab)
@@ -2828,7 +2828,8 @@ def update_scheduler():
                 trigger="cron",
                 hour=hour,
                 minute=minute,
-                id='daily_report'
+                id='daily_report',
+                misfire_grace_time=3600  # Allow job to run up to 1 hour late
             )
             print(Fore.GREEN + f"Scheduler updated to send emails at {settings.email_time}")
     except Exception as e:
@@ -2961,7 +2962,8 @@ if __name__ == '__main__':
                 trigger="cron",
                 hour=hour,
                 minute=minute,
-                id='daily_report'
+                id='daily_report',
+                misfire_grace_time=3600  # Allow job to run up to 1 hour late
             )
         
         # Schedule daily cleanup of old leave data (runs at 3 AM every day)
@@ -2970,16 +2972,18 @@ if __name__ == '__main__':
             trigger="cron",
             hour=3,
             minute=0,
-            id='cleanup_old_leave'
+            id='cleanup_old_leave',
+            misfire_grace_time=7200  # Allow job to run up to 2 hours late
         )
         
-        # Schedule daily Google Drive backup (runs at 2 AM every day)
+        # Schedule daily Google Drive backup (runs at 12:05 AM after daily report)
         scheduler.add_job(
             func=backup_database_to_gdrive_with_context,
             trigger="cron",
-            hour=2,
-            minute=0,
-            id='daily_gdrive_backup'
+            hour=0,
+            minute=5,
+            id='daily_gdrive_backup',
+            misfire_grace_time=7200  # Allow job to run up to 2 hours late
         )
         
         scheduler.start()

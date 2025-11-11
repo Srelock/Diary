@@ -1,0 +1,73 @@
+"""
+Generate version_info.txt for PyInstaller with current date
+Version format: YEAR.MONTH.DAY (e.g., 2025.11.8)
+"""
+from datetime import datetime
+
+# Get current date for version
+now = datetime.now()
+year = now.year
+month = now.month
+day = now.day
+
+version_string = f"{year}.{month}.{day}.0"
+
+# Create version_info.txt content
+version_info = f"""# UTF-8
+#
+# For more details about fixed file info:
+# https://msdn.microsoft.com/en-us/library/ms646997.aspx
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    # filevers and prodvers should be always a tuple with four items: (1, 2, 3, 4)
+    # Set not needed items to zero 0.
+    filevers=({year}, {month}, {day}, 0),
+    prodvers=({year}, {month}, {day}, 0),
+    # Contains a bitmask that specifies the valid bits 'flags'
+    mask=0x3f,
+    # Contains a bitmask that specifies the Boolean attributes of the file.
+    flags=0x0,
+    # The operating system for which this file was designed.
+    # 0x4 - NT and there is no need to change it.
+    OS=0x40004,
+    # The general type of file.
+    # 0x1 - the file is an application.
+    fileType=0x1,
+    # The function of the file.
+    # 0x0 - the function is not defined for this fileType
+    subtype=0x0,
+    # Creation date and time stamp.
+    date=(0, 0)
+    ),
+  kids=[
+    StringFileInfo(
+      [
+      StringTable(
+        u'040904B0',
+        [StringStruct(u'CompanyName', u'Building Management'),
+        StringStruct(u'FileDescription', u'Building Management Diary'),
+        StringStruct(u'FileVersion', u'{version_string}'),
+        StringStruct(u'InternalName', u'DiaryApp'),
+        StringStruct(u'LegalCopyright', u'© {year} Building Management'),
+        StringStruct(u'OriginalFilename', u'diary_app.exe'),
+        StringStruct(u'ProductName', u'Building Management Diary'),
+        StringStruct(u'ProductVersion', u'{version_string}')])
+      ]
+    ),
+    VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
+  ]
+)
+"""
+
+# Write to version_info.txt
+with open('version_info.txt', 'w', encoding='utf-8') as f:
+    f.write(version_info)
+
+# Also write version to simple text file for installer
+with open('version.txt', 'w', encoding='utf-8') as f:
+    f.write(f"{year}.{month}.{day}")
+
+print(f"✓ Generated version {version_string}")
+print(f"  File: version_info.txt")
+print(f"  Date: {now.strftime('%B %d, %Y')}")
+

@@ -455,7 +455,7 @@ This document contains all available API endpoints for the Diary application.
 [
   {
     "id": 1,
-    "sent_date": "2025-10-25T18:00:00",
+    "sent_date": "2025-10-25T23:59:00",
     "recipient": "example@example.com",
     "subject": "Daily Report - 2025-10-25",
     "pdf_path": "reports/PDF/daily_report_20251025.pdf"
@@ -473,7 +473,7 @@ This document contains all available API endpoints for the Diary application.
 **Response:**
 ```json
 {
-  "email_time": "18:00",
+  "email_time": "23:59",
   "email_enabled": true,
   "recipient_email": "example@example.com",
   "sender_email": "sender@example.com",
@@ -490,7 +490,7 @@ This document contains all available API endpoints for the Diary application.
 **Request Body:**
 ```json
 {
-  "email_time": "18:00",
+  "email_time": "23:59",
   "email_enabled": true,
   "recipient_email": "example@example.com",
   "sender_email": "sender@example.com",
@@ -503,7 +503,7 @@ This document contains all available API endpoints for the Diary application.
 **Response:**
 ```json
 {
-  "email_time": "18:00",
+  "email_time": "23:59",
   "email_enabled": true,
   "recipient_email": "example@example.com",
   "sender_email": "sender@example.com",
@@ -784,9 +784,9 @@ All endpoints return error responses in the following format:
 - **Database:** SQLite (`instance/diary.db`)
 
 ### Scheduled Tasks
-- **2:00 AM** - Automatic Google Drive backup (daily)
+- **11:59 PM** - Send daily report email (default, user-configurable)
+- **12:05 AM** - Automatic Google Drive backup (daily, runs after report)
 - **3:00 AM** - Cleanup old leave data (older than 2 years)
-- **User-configured time** - Send daily report email
 
 ### File Locations
 - **PDF Reports:** `reports/PDF/`

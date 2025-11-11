@@ -49,8 +49,8 @@ EMAIL_CONFIG = {
 }
 
 # Schedule Configuration
-# Daily report will be sent at 6:00 PM
-DAILY_REPORT_TIME = "18:00"
+# Daily report will be sent at 11:59 PM
+DAILY_REPORT_TIME = "23:59"
 
 # Database Configuration
 DATABASE_URL = 'sqlite:///diary.db'
