@@ -866,7 +866,7 @@
         }
         
         .fault-card-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #4a5568 0%, #718096 100%);
             color: white;
             padding: 20px 25px;
             display: flex;
@@ -910,9 +910,9 @@
         }
         
         .fault-input:focus {
-            border-color: #667eea;
+            border-color: #4a5568;
             background: white;
-            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+            box-shadow: 0 0 0 4px rgba(74, 85, 104, 0.1);
             outline: none;
         }
         
@@ -928,7 +928,7 @@
         }
         
         .btn-fault-submit {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #4a5568 0%, #718096 100%);
             color: white;
             border: none;
             padding: 15px 30px;
@@ -942,12 +942,12 @@
             align-items: center;
             justify-content: center;
             gap: 10px;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 4px 15px rgba(74, 85, 104, 0.3);
         }
         
         .btn-fault-submit:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 25px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 6px 25px rgba(74, 85, 104, 0.4);
         }
         
         .btn-fault-submit:active {
@@ -974,12 +974,12 @@
         }
         
         .fault-list::-webkit-scrollbar-thumb {
-            background: #667eea;
+            background: #718096;
             border-radius: 10px;
         }
         
         .fault-list::-webkit-scrollbar-thumb:hover {
-            background: #5568d3;
+            background: #4a5568;
         }
         
         .fault-item {
@@ -1000,13 +1000,13 @@
             top: 0;
             bottom: 0;
             width: 5px;
-            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(180deg, #4a5568 0%, #718096 100%);
             transition: width 0.3s ease;
         }
         
         .fault-item:hover {
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            border-color: #667eea;
+            border-color: #4a5568;
             transform: translateX(5px);
         }
         
@@ -1025,7 +1025,7 @@
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: #667eea;
+            background: #5a67d8;
             color: white;
             padding: 6px 14px;
             border-radius: 20px;
@@ -1034,7 +1034,7 @@
         }
         
         .fault-type-badge.intercom {
-            background: #764ba2;
+            background: #7c3aed;
         }
         
         .fault-timestamp {
@@ -1074,11 +1074,11 @@
         }
         
         .fault-contact {
-            border-left: 3px solid #28a745;
+            border-left: 3px solid #48bb78;
         }
         
         .fault-notes {
-            border-left: 3px solid #17a2b8;
+            border-left: 3px solid #4299e1;
         }
         
         .fault-actions {
@@ -1098,17 +1098,17 @@
         }
         
         .fault-status-badge.status-open {
-            background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
-            color: #856404;
+            background: #f6ad55;
+            color: #744210;
         }
         
         .fault-status-badge.status-in-progress {
-            background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+            background: #4299e1;
             color: white;
         }
         
         .fault-status-badge.status-closed {
-            background: linear-gradient(135deg, #55efc4 0%, #00b894 100%);
+            background: #48bb78;
             color: white;
         }
         
@@ -1123,32 +1123,32 @@
         }
         
         .btn-fault-progress {
-            background: #74b9ff;
+            background: #4299e1;
             color: white;
         }
         
         .btn-fault-progress:hover {
-            background: #0984e3;
+            background: #3182ce;
             transform: translateY(-2px);
         }
         
         .btn-fault-close {
-            background: #55efc4;
+            background: #48bb78;
             color: white;
         }
         
         .btn-fault-close:hover {
-            background: #00b894;
+            background: #38a169;
             transform: translateY(-2px);
         }
         
         .btn-fault-reopen {
-            background: #fdcb6e;
-            color: #2d3436;
+            background: #ed8936;
+            color: white;
         }
         
         .btn-fault-reopen:hover {
-            background: #f39c12;
+            background: #dd6b20;
             transform: translateY(-2px);
         }
         
@@ -1160,6 +1160,29 @@
         .btn-fault-delete:hover {
             background: #d63031;
             transform: translateY(-2px);
+        }
+        
+        .btn-fault-edit {
+            background: #718096;
+            color: white;
+        }
+        
+        .btn-fault-edit:hover {
+            background: #4a5568;
+            transform: translateY(-2px);
+        }
+        
+        #editFaultModal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
         }
         
         .fault-empty-state {
@@ -1201,9 +1224,9 @@
         }
         
         .fault-search-input:focus {
-            border-color: #667eea;
+            border-color: #4a5568;
             outline: none;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            box-shadow: 0 0 0 3px rgba(74, 85, 104, 0.1);
         }
         
         .fault-filter-bar {
@@ -1234,25 +1257,25 @@
         }
         
         .fault-filter-btn:hover {
-            border-color: #667eea;
-            color: #667eea;
+            border-color: #4a5568;
+            color: #4a5568;
             transform: translateY(-2px);
-            box-shadow: 0 4px 10px rgba(102, 126, 234, 0.2);
+            box-shadow: 0 4px 10px rgba(74, 85, 104, 0.2);
         }
         
         .fault-filter-btn.active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #4a5568 0%, #718096 100%);
             color: white;
-            border-color: #667eea;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+            border-color: #4a5568;
+            box-shadow: 0 4px 15px rgba(74, 85, 104, 0.3);
         }
         
         .btn-print-faults {
             padding: 10px 24px;
-            border: 2px solid #28a745;
+            border: 2px solid #4a5568;
             border-radius: 8px;
             background: white;
-            color: #28a745;
+            color: #4a5568;
             font-size: 0.95em;
             font-weight: 600;
             cursor: pointer;
@@ -1263,10 +1286,10 @@
         }
         
         .btn-print-faults:hover {
-            background: #28a745;
+            background: #4a5568;
             color: white;
             transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+            box-shadow: 0 4px 15px rgba(74, 85, 104, 0.3);
         }
         
         /* Hide print table on screen, only show when printing */
@@ -2013,7 +2036,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 15px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
             color: white;
         }
 
@@ -2790,6 +2813,78 @@
                 <h4 style="margin-top: 20px; margin-bottom: 15px;">Current & Upcoming Leave</h4>
                 <div id="leaveList" class="loading">Loading...</div>
             </div>
+            
+            <!-- Overtime Tracking (Super Users Only) -->
+            <div id="overtimeTrackingBox" class="card card-spaced" style="margin-top: 30px; display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3>Overtime Tracking</h3>
+                    <button id="unlockOvertimeBtn" class="btn btn-primary" onclick="unlockOvertimeTracking()" style="padding: 8px 16px;">
+                        🔓 Unlock Overtime Tracking
+                    </button>
+                    <button id="lockOvertimeBtn" class="btn btn-secondary" onclick="lockOvertimeTracking()" style="padding: 8px 16px; display: none;">
+                        🔒 Lock
+                    </button>
+                </div>
+                
+                <div id="overtimeContent" style="display: none;">
+                    <p style="color: #666; margin-bottom: 20px;">Track staff overtime hours. Only Super Users can access this section.</p>
+                    
+                    <!-- Add Overtime Form -->
+                    <div class="card" style="padding: 20px; margin-bottom: 20px; background: #f8f9fa; border: 2px solid #16a085;">
+                        <h4 style="color: #16a085; margin-bottom: 15px;">➕ Add Overtime Entry</h4>
+                        <form id="overtimeForm" style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 15px; align-items: end;">
+                            <div class="form-group">
+                                <label for="overtime_staff">Staff Member:</label>
+                                <select id="overtime_staff" class="form-control" required></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="overtime_date">Date:</label>
+                                <input type="date" id="overtime_date" class="form-control" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="overtime_hours">Hours:</label>
+                                <input type="number" id="overtime_hours" class="form-control" step="0.5" min="0.5" required placeholder="e.g. 2.5">
+                            </div>
+                            <div class="form-group">
+                                <label for="overtime_description">Description:</label>
+                                <input type="text" id="overtime_description" class="form-control" placeholder="Optional">
+                            </div>
+                            <div class="form-group">
+                                <label style="opacity: 0;">Action</label>
+                                <button type="submit" class="btn btn-primary" style="padding: 10px 20px;">Add Entry</button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Overtime Filter -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 15px; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                        <div class="form-group">
+                            <label for="overtime_filter_staff">Filter by Staff:</label>
+                            <select id="overtime_filter_staff" class="form-control">
+                                <option value="">All Staff</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="overtime_filter_start">From Date:</label>
+                            <input type="date" id="overtime_filter_start" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="overtime_filter_end">To Date:</label>
+                            <input type="date" id="overtime_filter_end" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label style="opacity: 0;">Action</label>
+                            <button type="button" class="btn btn-secondary" onclick="loadOvertimeEntries()" style="padding: 10px 20px;">Filter</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Overtime List -->
+                    <div id="overtimeList" class="card" style="padding: 20px;">
+                        <h4 style="margin-bottom: 15px;">Overtime Entries</h4>
+                        <div id="overtimeEntries" class="loading">Loading overtime entries...</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- CCTV/Intercom Faults Tab -->
@@ -2885,6 +2980,71 @@
                         </button>
                     </div>
                     <div id="faultList" class="fault-list loading">Loading...</div>
+                </div>
+            </div>
+            
+            <!-- Edit Fault Modal -->
+            <div id="editFaultModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;">
+                <div style="background: white; padding: 30px; border-radius: 10px; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h3 style="margin: 0; color: #2c3e50;">✏️ Edit Fault Report</h3>
+                        <button onclick="cancelFaultEdit()" style="background: none; border: none; font-size: 1.5em; cursor: pointer; color: #6c757d;">&times;</button>
+                    </div>
+                    <form id="editFaultForm" class="fault-form">
+                        <div class="form-group">
+                            <label for="edit_fault_type">Fault Type</label>
+                            <select id="edit_fault_type" class="form-control fault-input" required>
+                                <option value="">Select fault type...</option>
+                                <option value="CCTV">📹 CCTV</option>
+                                <option value="Intercom">📞 Intercom</option>
+                            </select>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label for="edit_flat_number">Flat Number</label>
+                                <input type="text" id="edit_flat_number" class="form-control fault-input" placeholder="e.g., 568, 478A" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="edit_block_number">Block</label>
+                                <input type="text" id="edit_block_number" class="form-control fault-input" placeholder="e.g., 8">
+                            </div>
+                            <div class="form-group">
+                                <label for="edit_floor_number">Floor/Level</label>
+                                <input type="text" id="edit_floor_number" class="form-control fault-input" placeholder="e.g., 8">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="edit_fault_description_type">Description of Fault</label>
+                            <select id="edit_fault_description_type" class="form-control fault-input" required>
+                                <option value="">Select fault description...</option>
+                                <option value="NOT WORKING">NOT WORKING</option>
+                                <option value="INSTALLATION">INSTALLATION</option>
+                                <option value="REPAIR NEEDED">REPAIR NEEDED</option>
+                                <option value="REPLACEMENT">REPLACEMENT</option>
+                                <option value="NO AUDIO">NO AUDIO</option>
+                                <option value="NO VIDEO">NO VIDEO</option>
+                                <option value="POOR QUALITY">POOR QUALITY</option>
+                                <option value="OTHER">OTHER</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="edit_contact_details">Contact Number/Details</label>
+                            <input type="text" id="edit_contact_details" class="form-control fault-input" placeholder="Contact number or additional details">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="edit_additional_notes">Additional Notes (Optional)</label>
+                            <textarea id="edit_additional_notes" class="form-control fault-input fault-textarea" rows="3" placeholder="Any additional information..."></textarea>
+                        </div>
+                        
+                        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                            <button type="button" onclick="cancelFaultEdit()" class="btn btn-secondary" style="padding: 10px 20px;">Cancel</button>
+                            <button type="submit" class="btn btn-primary" style="padding: 10px 20px;">Save Changes</button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
@@ -3171,6 +3331,18 @@
                 </div>
             </div>
             
+            <!-- Database Maintenance Section -->
+            <div class="card card-spaced">
+                <h3>🔧 Database Maintenance</h3>
+                <div style="padding: 15px; background: #f8f9fa; border-radius: 5px; margin-bottom: 15px;">
+                    <h4 style="color: #333; margin-top: 0;">Holiday/Sick Leave Duplicate Checker</h4>
+                    <p style="color: #666; margin: 10px 0;">Check for and remove duplicate holiday or sick leave entries that may have been created by accident.</p>
+                    <button onclick="checkDuplicates()" class="btn btn-primary" style="margin-right: 10px;">🔍 Check for Duplicates</button>
+                    <button onclick="cleanupDuplicates()" class="btn btn-danger">🧹 Clean Up Duplicates</button>
+                </div>
+                <div id="duplicatesResult" style="margin-top: 15px;"></div>
+            </div>
+            
             </div>
             <!-- End Settings Content -->
         </div>
@@ -3454,6 +3626,123 @@
                 .catch(error => {
                     console.error('Error exporting activity logs:', error);
                     showAlert('Error exporting activity logs', 'danger');
+                });
+        }
+        
+        // Database Maintenance Functions
+        function checkDuplicates() {
+            const resultDiv = document.getElementById('duplicatesResult');
+            resultDiv.innerHTML = '<p style="text-align: center; padding: 20px; color: #666;">Checking for duplicates...</p>';
+            
+            fetch('/api/staff-rota-duplicates')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        if (data.count === 0) {
+                            resultDiv.innerHTML = `
+                                <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 5px;">
+                                    <strong>✅ No duplicates found!</strong>
+                                    <p style="margin: 5px 0 0 0;">Your holiday and sick leave data is clean.</p>
+                                </div>`;
+                        } else {
+                            let html = `
+                                <div style="background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                                    <strong>⚠️ Found ${data.count} duplicate entries</strong>
+                                    <p style="margin: 5px 0 0 0;">These entries appear to be duplicates and can be safely removed.</p>
+                                </div>
+                                <div style="max-height: 400px; overflow-y: auto;">
+                                    <table class="table" style="font-size: 0.9em;">
+                                        <thead>
+                                            <tr>
+                                                <th>Staff Name</th>
+                                                <th>Date</th>
+                                                <th>Status</th>
+                                                <th>Notes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>`;
+                            
+                            data.duplicates.forEach(dup => {
+                                const date = new Date(dup.date).toLocaleDateString('en-GB');
+                                html += `
+                                    <tr>
+                                        <td><strong>${dup.staff_name}</strong></td>
+                                        <td>${date}</td>
+                                        <td><span class="status-badge status-${dup.status}">${dup.status.toUpperCase()}</span></td>
+                                        <td>${dup.notes || '-'}</td>
+                                    </tr>`;
+                            });
+                            
+                            html += `
+                                        </tbody>
+                                    </table>
+                                </div>`;
+                            
+                            resultDiv.innerHTML = html;
+                        }
+                    } else {
+                        resultDiv.innerHTML = `
+                            <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 5px;">
+                                <strong>❌ Error:</strong> ${data.error || 'Failed to check for duplicates'}
+                            </div>`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking duplicates:', error);
+                    resultDiv.innerHTML = `
+                        <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 5px;">
+                            <strong>❌ Error:</strong> Failed to check for duplicates
+                        </div>`;
+                });
+        }
+        
+        function cleanupDuplicates() {
+            if (!confirm('Are you sure you want to remove all duplicate holiday and sick leave entries?\n\nThis will keep the first entry and delete all duplicates. This action cannot be undone.')) {
+                return;
+            }
+            
+            const resultDiv = document.getElementById('duplicatesResult');
+            resultDiv.innerHTML = '<p style="text-align: center; padding: 20px; color: #666;">Cleaning up duplicates...</p>';
+            
+            fetch('/api/staff-rota-duplicates', {
+                method: 'DELETE'
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        if (data.deleted_count === 0) {
+                            resultDiv.innerHTML = `
+                                <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 5px;">
+                                    <strong>✅ No duplicates to clean up!</strong>
+                                    <p style="margin: 5px 0 0 0;">Your database is already clean.</p>
+                                </div>`;
+                        } else {
+                            resultDiv.innerHTML = `
+                                <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 5px;">
+                                    <strong>✅ Success!</strong>
+                                    <p style="margin: 5px 0 0 0;">Removed ${data.deleted_count} duplicate entries. Your database is now clean.</p>
+                                </div>`;
+                            
+                            // Refresh the leave data display
+                            loadLeaveData();
+                            loadPorterRota();
+                        }
+                        showAlert(data.message, 'success');
+                    } else {
+                        resultDiv.innerHTML = `
+                            <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 5px;">
+                                <strong>❌ Error:</strong> ${data.error || 'Failed to clean up duplicates'}
+                            </div>`;
+                        showAlert('Error cleaning up duplicates', 'danger');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error cleaning up duplicates:', error);
+                    resultDiv.innerHTML = `
+                        <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 5px;">
+                            <strong>❌ Error:</strong> Failed to clean up duplicates
+                        </div>`;
+                    showAlert('Error cleaning up duplicates', 'danger');
                 });
         }
 
@@ -3827,6 +4116,285 @@
             });
         }
 
+        // Overtime Tracking Functions (Super User Only)
+        let overtimeSuperUserPIN = null;
+        let overtimeAuthenticatedUser = null;
+
+        function unlockOvertimeTracking() {
+            requireSuperUserPin((pin) => {
+                overtimeSuperUserPIN = pin;
+                const response = fetch('/api/verify-leave-pin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pin: pin })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        overtimeAuthenticatedUser = data.name;
+                        document.getElementById('overtimeContent').style.display = 'block';
+                        document.getElementById('unlockOvertimeBtn').style.display = 'none';
+                        document.getElementById('lockOvertimeBtn').style.display = 'inline-block';
+                        document.getElementById('overtimeTrackingBox').style.display = 'block';
+                        populateOvertimeStaffDropdowns();
+                        loadOvertimeEntries();
+                        showAlert(`Overtime tracking unlocked by ${data.name}`, 'success');
+                    } else {
+                        showAlert(data.error || 'Failed to unlock overtime tracking', 'danger');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error unlocking overtime:', error);
+                    showAlert('Error unlocking overtime tracking', 'danger');
+                });
+            });
+        }
+
+        function lockOvertimeTracking() {
+            overtimeSuperUserPIN = null;
+            overtimeAuthenticatedUser = null;
+            document.getElementById('overtimeContent').style.display = 'none';
+            document.getElementById('unlockOvertimeBtn').style.display = 'inline-block';
+            document.getElementById('lockOvertimeBtn').style.display = 'none';
+            showAlert('Overtime tracking locked', 'info');
+        }
+
+        function requireSuperUserPin(callback) {
+            // Create or show super user PIN modal
+            let modal = document.getElementById('superUserPinModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'superUserPinModal';
+                modal.style.cssText = 'display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;';
+                modal.innerHTML = `
+                    <div style="background: white; padding: 30px; border-radius: 10px; max-width: 400px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                        <h3 style="margin-bottom: 20px; color: #2c3e50;">🔐 Super User Authentication</h3>
+                        <p style="color: #6c757d; margin-bottom: 20px; font-size: 0.95em;">Enter Super User PIN to access overtime tracking</p>
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 5px; font-weight: 600;">PIN:</label>
+                            <input type="password" id="superUserPinInput" placeholder="Enter Super User PIN" style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 5px; font-size: 1.1em; text-align: center; letter-spacing: 2px;" maxlength="10" autofocus>
+                        </div>
+                        <div id="superUserPinError" style="color: #dc3545; margin-bottom: 15px; display: none; text-align: center; font-weight: 500;"></div>
+                        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                            <button onclick="closeSuperUserPinModal()" style="padding: 10px 20px; border: none; background: #6c757d; color: white; border-radius: 5px; cursor: pointer; font-size: 1em;">Cancel</button>
+                            <button onclick="submitSuperUserPin()" style="padding: 10px 20px; border: none; background: #16a085; color: white; border-radius: 5px; cursor: pointer; font-size: 1em;">Submit</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                
+                // Handle Enter key
+                const pinInput = document.getElementById('superUserPinInput');
+                pinInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        submitSuperUserPin();
+                    }
+                });
+            }
+            
+            window.superUserPinCallback = callback;
+            modal.style.display = 'flex';
+            document.getElementById('superUserPinInput').value = '';
+            document.getElementById('superUserPinError').style.display = 'none';
+            setTimeout(() => document.getElementById('superUserPinInput').focus(), 100);
+        }
+        
+        function submitSuperUserPin() {
+            const pin = document.getElementById('superUserPinInput').value.trim();
+            const errorDiv = document.getElementById('superUserPinError');
+            
+            if (!pin) {
+                errorDiv.textContent = 'Please enter your PIN';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            
+            if (window.superUserPinCallback) {
+                window.superUserPinCallback(pin);
+                closeSuperUserPinModal();
+            }
+        }
+        
+        function closeSuperUserPinModal() {
+            const modal = document.getElementById('superUserPinModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+            window.superUserPinCallback = null;
+        }
+
+        function populateOvertimeStaffDropdowns() {
+            fetch('/api/staff-members')
+                .then(response => response.json())
+                .then(staff => {
+                    const activeStaff = staff.filter(s => s.active);
+                    
+                    // Populate add form dropdown
+                    const overtimeStaffSelect = document.getElementById('overtime_staff');
+                    if (overtimeStaffSelect) {
+                        overtimeStaffSelect.innerHTML = '<option value="">Select staff member...</option>';
+                        activeStaff.forEach(s => {
+                            const option = document.createElement('option');
+                            option.value = s.name;
+                            option.textContent = s.name;
+                            overtimeStaffSelect.appendChild(option);
+                        });
+                    }
+                    
+                    // Populate filter dropdown
+                    const filterStaffSelect = document.getElementById('overtime_filter_staff');
+                    if (filterStaffSelect) {
+                        filterStaffSelect.innerHTML = '<option value="">All Staff</option>';
+                        activeStaff.forEach(s => {
+                            const option = document.createElement('option');
+                            option.value = s.name;
+                            option.textContent = s.name;
+                            filterStaffSelect.appendChild(option);
+                        });
+                    }
+                })
+                .catch(error => console.error('Error loading staff:', error));
+        }
+
+        function loadOvertimeEntries() {
+            if (!overtimeSuperUserPIN) return;
+            
+            const staffFilter = document.getElementById('overtime_filter_staff')?.value || '';
+            const startDate = document.getElementById('overtime_filter_start')?.value || '';
+            const endDate = document.getElementById('overtime_filter_end')?.value || '';
+            
+            let url = '/api/overtime?';
+            const params = [];
+            if (staffFilter) params.push(`staff_name=${encodeURIComponent(staffFilter)}`);
+            if (startDate) params.push(`start_date=${startDate}`);
+            if (endDate) params.push(`end_date=${endDate}`);
+            url += params.join('&');
+            
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displayOvertimeEntries(data.overtime);
+                    } else {
+                        document.getElementById('overtimeEntries').innerHTML = '<p style="color: #dc3545;">Error loading overtime entries</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading overtime:', error);
+                    document.getElementById('overtimeEntries').innerHTML = '<p style="color: #dc3545;">Error loading overtime entries</p>';
+                });
+        }
+
+        function displayOvertimeEntries(entries) {
+            const container = document.getElementById('overtimeEntries');
+            
+            if (entries.length === 0) {
+                container.innerHTML = '<p style="color: #6c757d; text-align: center; padding: 20px;">No overtime entries found</p>';
+                return;
+            }
+            
+            // Calculate total hours
+            const totalHours = entries.reduce((sum, entry) => sum + parseFloat(entry.hours || 0), 0);
+            
+            let html = `
+                <div style="margin-bottom: 15px; padding: 10px; background: #e8f5e9; border-radius: 5px;">
+                    <strong>Total Hours: ${totalHours.toFixed(1)}</strong>
+                </div>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                            <th style="padding: 12px; text-align: left;">Staff</th>
+                            <th style="padding: 12px; text-align: left;">Date</th>
+                            <th style="padding: 12px; text-align: center;">Hours</th>
+                            <th style="padding: 12px; text-align: left;">Description</th>
+                            <th style="padding: 12px; text-align: left;">Created By</th>
+                            <th style="padding: 12px; text-align: center;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            entries.forEach(entry => {
+                const date = new Date(entry.date).toLocaleDateString('en-GB');
+                html += `
+                    <tr style="border-bottom: 1px solid #dee2e6;">
+                        <td style="padding: 10px;"><strong>${entry.staff_name}</strong></td>
+                        <td style="padding: 10px;">${date}</td>
+                        <td style="padding: 10px; text-align: center;">${entry.hours}</td>
+                        <td style="padding: 10px;">${entry.description || '-'}</td>
+                        <td style="padding: 10px; font-size: 0.9em; color: #6c757d;">${entry.created_by || 'N/A'}</td>
+                        <td style="padding: 10px; text-align: center;">
+                            <button onclick="editOvertimeEntry(${entry.id})" class="btn btn-sm btn-primary" style="padding: 5px 10px; margin-right: 5px;">Edit</button>
+                            <button onclick="deleteOvertimeEntry(${entry.id})" class="btn btn-sm btn-danger" style="padding: 5px 10px;">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function editOvertimeEntry(id) {
+            if (!overtimeSuperUserPIN) {
+                showAlert('Please unlock overtime tracking first', 'warning');
+                return;
+            }
+            
+            // Get entry details and populate form
+            fetch('/api/overtime')
+                .then(response => response.json())
+                .then(data => {
+                    const entry = data.overtime.find(e => e.id === id);
+                    if (entry) {
+                        document.getElementById('overtime_staff').value = entry.staff_name;
+                        document.getElementById('overtime_date').value = entry.date;
+                        document.getElementById('overtime_hours').value = entry.hours;
+                        document.getElementById('overtime_description').value = entry.description || '';
+                        
+                        // Change form to update mode
+                        const form = document.getElementById('overtimeForm');
+                        form.dataset.editId = id;
+                        form.querySelector('button[type="submit"]').textContent = 'Update Entry';
+                        
+                        // Scroll to form
+                        form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                })
+                .catch(error => console.error('Error loading entry:', error));
+        }
+
+        function deleteOvertimeEntry(id) {
+            if (!overtimeSuperUserPIN) {
+                showAlert('Please unlock overtime tracking first', 'warning');
+                return;
+            }
+            
+            if (!confirm('Are you sure you want to delete this overtime entry?')) {
+                return;
+            }
+            
+            fetch(`/api/overtime/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-Super-User-PIN': overtimeSuperUserPIN
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert('Overtime entry deleted successfully', 'success');
+                    loadOvertimeEntries();
+                } else {
+                    showAlert(data.error || 'Failed to delete entry', 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting entry:', error);
+                showAlert('Error deleting overtime entry', 'danger');
+            });
+        }
+
         // Individual Staff Schedule Functions
         function setScheduleRange(days) {
             const today = new Date();
@@ -4043,6 +4611,57 @@
                 endDate.setDate(today.getDate() + 30);
                 endInput.valueAsDate = endDate;
             }
+            
+            // Handle overtime form submission
+            const overtimeForm = document.getElementById('overtimeForm');
+            if (overtimeForm) {
+                overtimeForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    
+                    if (!overtimeSuperUserPIN) {
+                        showAlert('Please unlock overtime tracking first', 'warning');
+                        return;
+                    }
+                    
+                    const editId = overtimeForm.dataset.editId;
+                    const isEdit = !!editId;
+                    
+                    const data = {
+                        staff_name: document.getElementById('overtime_staff').value,
+                        date: document.getElementById('overtime_date').value,
+                        hours: parseFloat(document.getElementById('overtime_hours').value),
+                        description: document.getElementById('overtime_description').value
+                    };
+                    
+                    const url = isEdit ? `/api/overtime/${editId}` : '/api/overtime';
+                    const method = isEdit ? 'PUT' : 'POST';
+                    
+                    fetch(url, {
+                        method: method,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Super-User-PIN': overtimeSuperUserPIN
+                        },
+                        body: JSON.stringify(data)
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success) {
+                            showAlert(isEdit ? 'Overtime entry updated successfully' : 'Overtime entry added successfully', 'success');
+                            overtimeForm.reset();
+                            delete overtimeForm.dataset.editId;
+                            overtimeForm.querySelector('button[type="submit"]').textContent = 'Add Entry';
+                            loadOvertimeEntries();
+                        } else {
+                            showAlert(result.error || 'Failed to save entry', 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error saving overtime:', error);
+                        showAlert('Error saving overtime entry', 'danger');
+                    });
+                });
+            }
         });
 
         // Tab switching
@@ -4064,6 +4683,17 @@
             document.getElementById(tabName).classList.add('active');
             event.target.classList.add('active');
             currentTab = tabName;
+            
+            // Lock overtime tracking when switching tabs (only lock if currently unlocked)
+            if (overtimeSuperUserPIN !== null) {
+                lockOvertimeTracking();
+            }
+            
+            // Show overtime tracking box only on rota tab
+            const overtimeBox = document.getElementById('overtimeTrackingBox');
+            if (overtimeBox) {
+                overtimeBox.style.display = tabName === 'rota' ? 'block' : 'none';
+            }
             
             // Auto-focus PIN input when settings tab is opened
             if (tabName === 'settings') {
@@ -4691,6 +5321,9 @@
                 let actionButtons = '';
                 if (fault.status === 'open') {
                     actionButtons = `
+                        <button class="btn-fault-action btn-fault-edit" onclick="editFault(${fault.id})">
+                            ✏️ Edit
+                        </button>
                         <button class="btn-fault-action btn-fault-progress" onclick="updateFaultStatus(${fault.id}, 'in_progress')">
                             🔄 In Progress
                         </button>
@@ -4700,6 +5333,9 @@
                     `;
                 } else if (fault.status === 'in_progress') {
                     actionButtons = `
+                        <button class="btn-fault-action btn-fault-edit" onclick="editFault(${fault.id})">
+                            ✏️ Edit
+                        </button>
                         <button class="btn-fault-action btn-fault-close" onclick="updateFaultStatus(${fault.id}, 'closed')">
                             ✓ Resolve
                         </button>
@@ -4921,6 +5557,90 @@
                 });
             }
         }
+        
+        let currentEditingFaultId = null;
+        
+        function editFault(faultId) {
+            // Find the fault in allFaults array
+            const fault = allFaults.find(f => f.id === faultId);
+            if (!fault) {
+                showAlert('Fault not found', 'danger');
+                return;
+            }
+            
+            // Check if fault can be edited (only open/in_progress)
+            if (fault.status === 'closed') {
+                showAlert('Closed faults cannot be edited', 'warning');
+                return;
+            }
+            
+            currentEditingFaultId = faultId;
+            
+            // Populate edit form with fault data
+            document.getElementById('edit_fault_type').value = fault.fault_type;
+            document.getElementById('edit_flat_number').value = fault.flat_number || '';
+            document.getElementById('edit_block_number').value = fault.block_number || '';
+            document.getElementById('edit_floor_number').value = fault.floor_number || '';
+            document.getElementById('edit_fault_description_type').value = fault.description || '';
+            document.getElementById('edit_contact_details').value = fault.contact_details || '';
+            document.getElementById('edit_additional_notes').value = fault.additional_notes || '';
+            
+            // Show modal
+            document.getElementById('editFaultModal').style.display = 'flex';
+        }
+        
+        function cancelFaultEdit() {
+            currentEditingFaultId = null;
+            document.getElementById('editFaultModal').style.display = 'none';
+            document.getElementById('editFaultForm').reset();
+        }
+        
+        // Handle edit form submission
+        document.addEventListener('DOMContentLoaded', function() {
+            const editFaultForm = document.getElementById('editFaultForm');
+            if (editFaultForm) {
+                editFaultForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    
+                    if (!currentEditingFaultId) {
+                        showAlert('No fault selected for editing', 'danger');
+                        return;
+                    }
+                    
+                    const data = {
+                        fault_type: document.getElementById('edit_fault_type').value,
+                        flat_number: document.getElementById('edit_flat_number').value,
+                        block_number: document.getElementById('edit_block_number').value,
+                        floor_number: document.getElementById('edit_floor_number').value,
+                        description: document.getElementById('edit_fault_description_type').value,
+                        contact_details: document.getElementById('edit_contact_details').value,
+                        additional_notes: document.getElementById('edit_additional_notes').value
+                    };
+                    
+                    fetch(`/api/cctv-faults/${currentEditingFaultId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(data)
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success) {
+                            showAlert('Fault updated successfully!', 'success');
+                            cancelFaultEdit();
+                            loadCCTVFaults();
+                        } else {
+                            showAlert(result.error || 'Failed to update fault', 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error updating fault:', error);
+                        showAlert('Error updating fault', 'danger');
+                    });
+                });
+            }
+        });
 
         // Water Temperature
         document.getElementById('tempForm').addEventListener('submit', function(e) {
@@ -5463,8 +6183,17 @@
         }
 
         // Holiday and Sick Leave Management
+        let isSubmittingHoliday = false;
+        
         function handleHolidaySubmit(e) {
             e.preventDefault();
+            
+            // Prevent double submission
+            if (isSubmittingHoliday) {
+                console.log('Holiday submission already in progress...');
+                return;
+            }
+            
             const staffName = document.getElementById('holiday_staff').value;
             const dateFrom = document.getElementById('holiday_date_from').value;
             const dateTo = document.getElementById('holiday_date_to').value;
@@ -5489,6 +6218,14 @@
                 notes: notes
             };
             
+            // Disable submit button and set flag
+            isSubmittingHoliday = true;
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Adding...';
+            }
+            
             fetch('/api/staff-rota-range', {
                 method: 'POST',
                 headers: {
@@ -5510,15 +6247,34 @@
                     loadLeaveData();
                     loadTodaySchedule(); // Refresh today's schedule
                     loadPorterRota(); // Refresh calendar
+                } else {
+                    showAlert('Error adding holiday: ' + (data.error || 'Unknown error'), 'danger');
                 }
             })
             .catch(error => {
                 showAlert('Error adding holiday: ' + error, 'danger');
+            })
+            .finally(() => {
+                // Re-enable submit button and reset flag
+                isSubmittingHoliday = false;
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Add Holiday';
+                }
             });
         }
         
+        let isSubmittingSick = false;
+        
         function handleSickSubmit(e) {
             e.preventDefault();
+            
+            // Prevent double submission
+            if (isSubmittingSick) {
+                console.log('Sick leave submission already in progress...');
+                return;
+            }
+            
             const staffName = document.getElementById('sick_staff').value;
             const dateFrom = document.getElementById('sick_date_from').value;
             const dateTo = document.getElementById('sick_date_to').value;
@@ -5543,6 +6299,14 @@
                 notes: notes
             };
             
+            // Disable submit button and set flag
+            isSubmittingSick = true;
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Adding...';
+            }
+            
             fetch('/api/staff-rota-range', {
                 method: 'POST',
                 headers: {
@@ -5564,10 +6328,20 @@
                     loadLeaveData();
                     loadTodaySchedule(); // Refresh today's schedule
                     loadPorterRota(); // Refresh calendar
+                } else {
+                    showAlert('Error adding sick leave: ' + (data.error || 'Unknown error'), 'danger');
                 }
             })
             .catch(error => {
                 showAlert('Error adding sick leave: ' + error, 'danger');
+            })
+            .finally(() => {
+                // Re-enable submit button and reset flag
+                isSubmittingSick = false;
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Add Sick Leave';
+                }
             });
         }
         

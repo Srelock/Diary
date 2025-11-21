@@ -1485,6 +1485,63 @@ def staff_rota_range():
         'message': f'Added {days_added} day(s) of {status} ({working_days_count} working day(s))'
     })
 
+@app.route('/api/staff-rota-duplicates', methods=['GET', 'DELETE'])
+def staff_rota_duplicates():
+    """Find and optionally remove duplicate staff rota entries"""
+    try:
+        # Find all rota entries
+        all_rotas = StaffRota.query.all()
+        
+        # Group by staff_name, date, and status to find duplicates
+        seen = {}
+        duplicates = []
+        
+        for rota in all_rotas:
+            key = (rota.staff_name, rota.date, rota.status)
+            if key in seen:
+                # This is a duplicate
+                duplicates.append({
+                    'id': rota.id,
+                    'staff_name': rota.staff_name,
+                    'date': rota.date.isoformat(),
+                    'status': rota.status,
+                    'notes': rota.notes,
+                    'original_id': seen[key]
+                })
+            else:
+                seen[key] = rota.id
+        
+        if request.method == 'GET':
+            # Just return the list of duplicates
+            return jsonify({
+                'success': True,
+                'count': len(duplicates),
+                'duplicates': duplicates
+            })
+        
+        elif request.method == 'DELETE':
+            # Remove the duplicate entries (keep the first one)
+            deleted_count = 0
+            for dup in duplicates:
+                rota = StaffRota.query.get(dup['id'])
+                if rota:
+                    db.session.delete(rota)
+                    deleted_count += 1
+            
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'deleted_count': deleted_count,
+                'message': f'Removed {deleted_count} duplicate entries'
+            })
+    
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api/staff-schedule/<int:staff_id>', methods=['GET'])
 def staff_schedule(staff_id):
     """Get individual staff member's schedule for a date range"""
@@ -1926,6 +1983,48 @@ def update_fault_status():
         db.session.commit()
         return jsonify({'success': True})
     return jsonify({'success': False})
+
+@app.route('/api/cctv-faults/<int:fault_id>', methods=['PUT'])
+def update_cctv_fault(fault_id):
+    """Update an existing CCTV/Intercom fault (only open/in_progress faults can be edited)"""
+    fault = CCTVFault.query.get(fault_id)
+    if not fault:
+        return jsonify({'success': False, 'error': 'Fault not found'}), 404
+    
+    # Only allow editing of open or in_progress faults
+    if fault.status == 'closed':
+        return jsonify({'success': False, 'error': 'Closed faults cannot be edited'}), 400
+    
+    data = request.json
+    
+    # Update editable fields
+    if 'fault_type' in data:
+        fault.fault_type = data['fault_type']
+    if 'flat_number' in data:
+        fault.flat_number = data.get('flat_number', '')
+    if 'block_number' in data:
+        fault.block_number = data.get('block_number', '')
+    if 'floor_number' in data:
+        fault.floor_number = data.get('floor_number', '')
+    if 'description' in data:
+        fault.description = data['description']
+    if 'contact_details' in data:
+        fault.contact_details = data.get('contact_details', '')
+    if 'additional_notes' in data:
+        fault.additional_notes = data.get('additional_notes', '')
+    
+    # Rebuild location string from components for backwards compatibility
+    location_parts = []
+    if fault.flat_number:
+        location_parts.append(f"Flat {fault.flat_number}")
+    if fault.block_number:
+        location_parts.append(f"Block {fault.block_number}")
+    if fault.floor_number:
+        location_parts.append(f"Floor {fault.floor_number}")
+    fault.location = ' | '.join(location_parts) if location_parts else ''
+    
+    db.session.commit()
+    return jsonify({'success': True, 'id': fault.id})
 
 @app.route('/api/delete-fault/<int:fault_id>', methods=['DELETE'])
 def delete_fault(fault_id):
