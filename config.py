@@ -22,4 +22,3 @@ DAILY_REPORT_TIME = "23:59"
 # Database Configuration
 # NOTE: This is NOT currently used by the app (kept for reference only)
 DATABASE_URL = 'sqlite:///diary.db'
-
