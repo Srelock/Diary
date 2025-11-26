@@ -37,8 +37,38 @@ except ImportError:
         'recipient': 'recipient@example.com'
     }
 
+def get_user_data_dir():
+    """Get writable user data directory for storing files"""
+    if getattr(sys, 'frozen', False):
+        # Running as compiled .exe - use AppData
+        if sys.platform == 'win32':
+            appdata = os.getenv('LOCALAPPDATA')
+            if not appdata:
+                appdata = os.path.join(os.getenv('USERPROFILE'), 'AppData', 'Local')
+            user_data_dir = os.path.join(appdata, 'DiaryApp')
+        else:
+            from pathlib import Path
+            if sys.platform == 'darwin':
+                user_data_dir = os.path.join(str(Path.home()), 'Library', 'Application Support', 'DiaryApp')
+            else:
+                user_data_dir = os.path.join(str(Path.home()), '.local', 'share', 'DiaryApp')
+    else:
+        # Running as Python script - use project directory
+        user_data_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Create directory if it doesn't exist
+    os.makedirs(user_data_dir, exist_ok=True)
+    return user_data_dir
+
+# Initialize user data directory
+USER_DATA_DIR = get_user_data_dir()
+print(Fore.CYAN + f"User data directory: {USER_DATA_DIR}")
+
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///diary.db'
+# Use user data directory for database
+db_path = os.path.join(USER_DATA_DIR, 'instance', 'diary.db')
+os.makedirs(os.path.dirname(db_path), exist_ok=True)
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -87,6 +117,8 @@ class EmailLog(db.Model):
     recipient = db.Column(db.String(200), nullable=False)
     subject = db.Column(db.String(200), nullable=False)
     pdf_path = db.Column(db.String(500), nullable=False)
+    status = db.Column(db.String(20), default='pending')  # 'success', 'failed', 'pending'
+    error_message = db.Column(db.Text, default='')  # Store error details if email failed
 
 class ScheduleSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -194,13 +226,20 @@ def send_daily_report(report_date=None):
         email_log = EmailLog(
             recipient=settings.recipient_email,
             subject=f"Daily Report - {report_date}",
-            pdf_path=pdf_path  # Saved locally, not emailed
+            pdf_path=pdf_path,  # Saved locally, not emailed
+            status='pending',
+            error_message=''
         )
         db.session.add(email_log)
         db.session.commit()
         
         # Send email with HTML styling (no PDF attachment)
-        email_sent = send_email_with_pdf(pdf_path, f"Daily Report - {report_date}", settings.recipient_email)
+        email_sent, error_message = send_email_with_pdf(pdf_path, f"Daily Report - {report_date}", settings.recipient_email)
+        
+        # Update email log with result
+        email_log.status = 'success' if email_sent else 'failed'
+        email_log.error_message = error_message or ''
+        db.session.commit()
         
         if email_sent:
             # Mark as sent if there were occurrences and email succeeded
@@ -213,6 +252,8 @@ def send_daily_report(report_date=None):
             print(Fore.CYAN + f"Local backups saved - PDF: {pdf_path}, CSV: {csv_path}")
         else:
             print(Fore.YELLOW + f"⚠️ Email failed to send for {report_date}, but PDF/CSV saved locally")
+            if error_message:
+                print(Fore.RED + f"Error details: {error_message}")
             print(Fore.CYAN + f"PDF: {pdf_path}")
             print(Fore.CYAN + f"CSV: {csv_path}")
         
@@ -235,10 +276,9 @@ def generate_daily_pdf(occurrences, report_date=None):
     
     # Filename uses report date, with time suffix to avoid overwriting
     filename = f"daily_report_{report_date.strftime('%Y%m%d')}_{datetime.now().strftime('%H%M%S')}.pdf"
-    filepath = os.path.join('reports', 'PDF', filename)
-    
-    # Create reports/PDF directory if it doesn't exist
-    os.makedirs(os.path.join('reports', 'PDF'), exist_ok=True)
+    reports_dir = os.path.join(USER_DATA_DIR, 'reports', 'PDF')
+    os.makedirs(reports_dir, exist_ok=True)
+    filepath = os.path.join(reports_dir, filename)
     
     doc = SimpleDocTemplate(filepath, pagesize=letter)
     styles = getSampleStyleSheet()
@@ -606,10 +646,9 @@ def generate_daily_csv(occurrences, report_date=None):
     
     # Filename uses report date, with time suffix to avoid overwriting
     filename = f"daily_report_{report_date.strftime('%Y%m%d')}_{datetime.now().strftime('%H%M%S')}.csv"
-    filepath = os.path.join('reports', 'CSV', filename)
-    
-    # Create reports/CSV directory if it doesn't exist
-    os.makedirs(os.path.join('reports', 'CSV'), exist_ok=True)
+    reports_dir = os.path.join(USER_DATA_DIR, 'reports', 'CSV')
+    os.makedirs(reports_dir, exist_ok=True)
+    filepath = os.path.join(reports_dir, filename)
     
     # Get date and staff schedule info for the report
     today = report_date
@@ -1116,8 +1155,30 @@ def generate_email_html(occurrences, report_date=None):
     return html
 
 
+def log_email_to_file(sender_email, recipients, subject, status, error_message=None):
+    """Log email attempts to a file for detailed debugging"""
+    try:
+        log_dir = os.path.join(USER_DATA_DIR, 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, 'email_log.txt')
+        
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"\n{'='*80}\n")
+            f.write(f"Timestamp: {timestamp}\n")
+            f.write(f"From: {sender_email}\n")
+            f.write(f"To: {', '.join(recipients) if isinstance(recipients, list) else recipients}\n")
+            f.write(f"Subject: {subject}\n")
+            f.write(f"Status: {status}\n")
+            if error_message:
+                f.write(f"Error: {error_message}\n")
+            f.write(f"{'='*80}\n")
+    except Exception as e:
+        print(Fore.YELLOW + f"Warning: Could not write to email log file: {e}")
+
 def send_email_with_pdf(pdf_path, subject, recipient=None):
-    """Send email with PDF attachment - supports multiple recipients"""
+    """Send email with PDF attachment - supports multiple recipients
+    Returns: (success: bool, error_message: str)"""
     try:
         # Get email settings from database
         settings = ScheduleSettings.query.first()
@@ -1180,15 +1241,49 @@ def send_email_with_pdf(pdf_path, subject, recipient=None):
         server.quit()
         
         print(Fore.GREEN + f"Email sent successfully from {sender_email} to: {', '.join(recipients)}")
-        return True
+        log_email_to_file(sender_email, recipients, subject, 'success')
+        return True, None
+    except smtplib.SMTPAuthenticationError as e:
+        error_msg = f"SMTP Authentication Error: {str(e)}. Check your email and app password."
+        print(Fore.RED + f"Error sending email: {error_msg}")
+        log_email_to_file(sender_email if 'sender_email' in locals() else 'unknown', 
+                         recipients if 'recipients' in locals() else [], 
+                         subject, 'failed', error_msg)
+        return False, error_msg
+    except smtplib.SMTPRecipientsRefused as e:
+        error_msg = f"SMTP Recipients Refused: {str(e)}. One or more email addresses may be invalid."
+        print(Fore.RED + f"Error sending email: {error_msg}")
+        log_email_to_file(sender_email if 'sender_email' in locals() else 'unknown', 
+                         recipients if 'recipients' in locals() else [], 
+                         subject, 'failed', error_msg)
+        return False, error_msg
+    except smtplib.SMTPServerDisconnected as e:
+        error_msg = f"SMTP Server Disconnected: {str(e)}. Server may have closed the connection."
+        print(Fore.RED + f"Error sending email: {error_msg}")
+        log_email_to_file(sender_email if 'sender_email' in locals() else 'unknown', 
+                         recipients if 'recipients' in locals() else [], 
+                         subject, 'failed', error_msg)
+        return False, error_msg
     except Exception as e:
-        print(Fore.RED + f"Error sending email: {e}")
-        return False
+        error_msg = f"Error sending email: {str(e)}"
+        print(Fore.RED + error_msg)
+        log_email_to_file(sender_email if 'sender_email' in locals() else 'unknown', 
+                         recipients if 'recipients' in locals() else [], 
+                         subject, 'failed', error_msg)
+        return False, error_msg
 
 # Routes
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/favicon.ico')
+def favicon():
+    """Serve the favicon"""
+    ico_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'diary.ico')
+    if os.path.exists(ico_path):
+        return send_file(ico_path, mimetype='image/x-icon')
+    return '', 404
 
 @app.route('/api/daily-occurrences', methods=['GET', 'POST'])
 def daily_occurrences():
@@ -2178,7 +2273,7 @@ def test_email():
         
         # Send test email with HTML styling (no PDF attachment)
         print(Fore.CYAN + f"Attempting to send HTML email (no PDF attachment)...")
-        email_sent = send_email_with_pdf(
+        email_sent, error_message = send_email_with_pdf(
             pdf_path, 
             f"TEST - Daily Report - {today}", 
             settings.recipient_email
@@ -2194,11 +2289,14 @@ def test_email():
                 'count': occurrence_count
             })
         else:
+            error_details = error_message if error_message else 'Unknown error'
             print(Fore.RED + f"✗ Email failed to send!")
+            if error_message:
+                print(Fore.RED + f"Error: {error_message}")
             print(Fore.CYAN + Style.BRIGHT + f"{'='*50}\n")
             return jsonify({
                 'success': False,
-                'error': 'Failed to send test email. Check console for details. Common issues:\n- Wrong email/password\n- Gmail: Need App Password, not regular password\n- Firewall blocking SMTP\n- Check spam folder'
+                'error': f'Failed to send test email.\n\nError: {error_details}\n\nCommon issues:\n- Wrong email/password\n- Gmail: Need App Password, not regular password\n- Firewall blocking SMTP\n- Check spam folder\n\nCheck the email log file at {os.path.join(USER_DATA_DIR, "logs", "email_log.txt")} for more details.'
             })
             
     except Exception as e:
@@ -2254,7 +2352,7 @@ def manual_backup_to_gdrive():
         else:
             return jsonify({
                 'success': False,
-                'error': 'Backup failed. Check console for details.\n\nCommon issues:\n- service_account.json file missing\n- Invalid credentials\n- No internet connection\n- Google Drive API not enabled'
+                'error': 'Backup failed. Check console for details.\n\nCommon issues:\n- credentials.json file missing\n- Invalid or expired OAuth2 token\n- No internet connection\n- Google Drive API not enabled\n- Need to re-authorize (delete token.pickle and try again)'
             })
     except Exception as e:
         print(Fore.RED + f"✗ Error in manual backup: {str(e)}")
@@ -2267,7 +2365,7 @@ def manual_backup_to_gdrive():
 def log_settings_access(staff_name, action, success, ip_address=None):
     """Log all settings access attempts to a file"""
     try:
-        log_dir = 'logs'
+        log_dir = os.path.join(USER_DATA_DIR, 'logs')
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, 'settings_access.log')
         
@@ -2305,7 +2403,7 @@ def log_activity(user_name, action_type, entity_type, description, entity_id=Non
 def log_shutdown(reason="Normal shutdown"):
     """Log application shutdown to a text file"""
     try:
-        log_dir = 'logs'
+        log_dir = os.path.join(USER_DATA_DIR, 'logs')
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, 'shutdown_log.txt')
         
@@ -2322,7 +2420,7 @@ def log_shutdown(reason="Normal shutdown"):
 def log_startup():
     """Log application startup to a text file"""
     try:
-        log_dir = 'logs'
+        log_dir = os.path.join(USER_DATA_DIR, 'logs')
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, 'shutdown_log.txt')
         
@@ -2377,7 +2475,7 @@ def verify_settings_pin():
 def get_settings_access_logs():
     """Get recent settings access logs"""
     try:
-        log_file = os.path.join('logs', 'settings_access.log')
+        log_file = os.path.join(USER_DATA_DIR, 'logs', 'settings_access.log')
         
         if not os.path.exists(log_file):
             return jsonify({'logs': [], 'message': 'No access logs yet'})
@@ -2519,7 +2617,9 @@ def email_logs():
         'sent_date': log.sent_date.isoformat(),
         'recipient': log.recipient,
         'subject': log.subject,
-        'pdf_path': log.pdf_path
+        'pdf_path': log.pdf_path,
+        'status': getattr(log, 'status', 'unknown'),  # Handle old records without status
+        'error_message': getattr(log, 'error_message', '')  # Handle old records without error_message
     } for log in logs])
 
 @app.route('/api/staff-members', methods=['GET', 'POST'])
@@ -2742,24 +2842,84 @@ def cleanup_old_leave_data():
 def upload_to_google_drive(file_path, file_name='diary_latest.db'):
     """Upload file to Google Drive, replacing any existing backup"""
     try:
-        from google.oauth2 import service_account
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google.auth.transport.requests import Request
         from googleapiclient.discovery import build
         from googleapiclient.http import MediaFileUpload
+        import pickle
         
-        # Check if service account credentials exist
-        credentials_path = 'service_account.json'
-        if not os.path.exists(credentials_path):
-            print(Fore.RED + "✗ Google Drive backup failed: service_account.json not found")
-            print(Fore.YELLOW + "  Please follow instructions in GOOGLE_DRIVE_SETUP.md to set up credentials")
+        # OAuth2 credentials and token paths
+        # Get the directory where the app is running (works for both .exe and .py)
+        if getattr(sys, 'frozen', False):
+            # Running as compiled .exe
+            app_dir = os.path.dirname(sys.executable)
+        else:
+            # Running as Python script
+            app_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Try app directory first for credentials (may be in installation folder)
+        CREDENTIALS_FILE = os.path.join(app_dir, 'credentials.json')
+        # If not found, try user data directory
+        if not os.path.exists(CREDENTIALS_FILE):
+            CREDENTIALS_FILE = os.path.join(USER_DATA_DIR, 'credentials.json')
+        
+        # Token always goes to user data directory (needs write access)
+        TOKEN_FILE = os.path.join(USER_DATA_DIR, 'token.pickle')
+        SCOPES = ['https://www.googleapis.com/auth/drive.file']
+        
+        # Check if credentials.json exists
+        if not os.path.exists(CREDENTIALS_FILE):
+            print(Fore.RED + "✗ Google Drive backup failed: credentials.json not found")
+            print(Fore.YELLOW + f"  Looked in: {app_dir}")
+            print(Fore.YELLOW + f"  And in: {USER_DATA_DIR}")
+            print(Fore.YELLOW + "  Please follow instructions in GOOGLE_DRIVE_SETUP_OAUTH2.md to set up OAuth2 credentials")
             return False
         
-        # Load credentials
-        SCOPES = ['https://www.googleapis.com/auth/drive.file']
-        credentials = service_account.Credentials.from_service_account_file(
-            credentials_path, scopes=SCOPES)
+        # Load or create credentials
+        creds = None
+        if os.path.exists(TOKEN_FILE):
+            try:
+                with open(TOKEN_FILE, 'rb') as token:
+                    creds = pickle.load(token)
+            except Exception as e:
+                print(Fore.YELLOW + f"⚠ Could not load token from {TOKEN_FILE}: {e}")
+                creds = None
+        
+        # If there are no (valid) credentials available, let the user log in
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                    print(Fore.GREEN + "✓ Refreshed Google Drive credentials")
+                except Exception as e:
+                    print(Fore.YELLOW + f"⚠ Token refresh failed, re-authorizing: {e}")
+                    creds = None
+            
+            if not creds:
+                print(Fore.CYAN + "Starting OAuth2 authorization flow...")
+                print(Fore.CYAN + "A browser window will open for you to sign in.")
+                flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+                creds = flow.run_local_server(port=0)
+                print(Fore.GREEN + "✓ Google Drive authorization successful!")
+            
+            # Save the credentials for the next run
+            try:
+                # Ensure the user data directory exists and is writable
+                os.makedirs(USER_DATA_DIR, exist_ok=True)
+                with open(TOKEN_FILE, 'wb') as token:
+                    pickle.dump(creds, token)
+                print(Fore.GREEN + f"✓ Credentials saved to: {TOKEN_FILE}")
+            except PermissionError as e:
+                print(Fore.RED + f"✗ Permission denied: Cannot save token.pickle to {USER_DATA_DIR}")
+                print(Fore.YELLOW + "  This should not happen with user data directory.")
+                print(Fore.YELLOW + f"  Please check folder permissions for: {USER_DATA_DIR}")
+                raise  # Re-raise to show the error in the API response
+            except Exception as e:
+                print(Fore.RED + f"✗ Error saving token file: {e}")
+                raise  # Re-raise to show the error
         
         # Build Drive API service
-        service = build('drive', 'v3', credentials=credentials)
+        service = build('drive', 'v3', credentials=creds)
         
         # Search for "Diary_Backups" folder
         folder_name = 'Diary_Backups'
@@ -2819,8 +2979,8 @@ def backup_database_to_gdrive():
     import tempfile
     
     try:
-        # Source database file
-        db_path = os.path.join('instance', 'diary.db')
+        # Source database file - use user data directory
+        db_path = os.path.join(USER_DATA_DIR, 'instance', 'diary.db')
         
         if not os.path.exists(db_path):
             print(Fore.RED + "✗ Database file not found, skipping Google Drive backup")
@@ -2987,6 +3147,18 @@ def migrate_database():
                     conn.execute(text("ALTER TABLE schedule_settings ADD COLUMN smtp_port INTEGER DEFAULT 587"))
                     conn.commit()
                 print(Fore.GREEN + "✓ Sender email columns added successfully!")
+        
+        # Check if email_log table needs status and error_message columns
+        if 'email_log' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('email_log')]
+            
+            if 'status' not in columns:
+                print(Fore.CYAN + "Adding status and error_message columns to email_log...")
+                with db.engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE email_log ADD COLUMN status VARCHAR(20) DEFAULT 'pending'"))
+                    conn.execute(text("ALTER TABLE email_log ADD COLUMN error_message TEXT DEFAULT ''"))
+                    conn.commit()
+                print(Fore.GREEN + "✓ Email log status columns added successfully!")
         
         # Check if cctv_fault table needs new detailed fields
         if 'cctv_fault' in inspector.get_table_names():

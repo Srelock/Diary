@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Building Management Diary</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -2631,6 +2632,47 @@
         .collapsible-header:hover {
             opacity: 0.8;
         }
+
+        /* Settings Section Headers */
+        .settings-section {
+            margin-bottom: 30px;
+        }
+
+        .settings-section-header {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #007bff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .settings-section-header::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 30px;
+            background: #007bff;
+            border-radius: 2px;
+        }
+
+        body.dark-mode .settings-section-header {
+            color: #ffffff;
+            border-bottom-color: #4a9eff;
+        }
+
+        body.dark-mode .settings-section-header::before {
+            background: #4a9eff;
+        }
+
+        .settings-section-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
     </style>
 </head>
 <body>
@@ -3142,7 +3184,7 @@
 
         <!-- Settings Tab -->
         <div id="settings" class="tab-content">
-            <h2>🔐 Email & Schedule Settings</h2>
+            <h2>⚙️ Settings</h2>
             
             <!-- PIN Authentication Overlay -->
             <div id="settingsPinOverlay" class="card" style="max-width: 450px; margin: 50px auto; padding: 40px; background: white; border: 2px solid #e0e0e0; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
@@ -3165,184 +3207,209 @@
             
             <!-- Settings Content (Initially Hidden) -->
             <div id="settingsContent" style="display: none;">
-                <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 5px; margin-bottom: 30px;">
                     <strong>🔓 Unlocked by:</strong> <span id="settingsUnlockedBy">Unknown</span>
                     <button onclick="lockSettings()" class="btn btn-danger" style="float: right; padding: 5px 15px;">🔒 Lock Settings</button>
                 </div>
                 
-                <div class="grid">
-                    <div class="card">
-                        <h3 onclick="toggleEmailSettings()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
-                            <span>Email Schedule Configuration</span>
-                            <span id="emailSettingsToggleIcon" style="font-size: 0.8em; transition: transform 0.3s; transform: rotate(-90deg);">▼</span>
-                        </h3>
-                        <div id="emailSettingsContent" class="collapsible-content collapsed">
-                        <form id="settingsForm">
-                        <div class="form-group">
-                            <label for="email_time">Daily Report Time:</label>
-                            <input type="time" id="email_time" class="form-control" required>
-                            <small class="form-text">Set the time when daily reports should be sent automatically</small>
-                        </div>
-                        <div class="form-group">
-                            <label for="recipient_email">Recipient Email(s):</label>
-                            <input type="text" id="recipient_email" class="form-control" placeholder="email1@example.com, email2@example.com" required>
-                            <small class="form-text">Enter one or more email addresses separated by commas (e.g., john@example.com, jane@example.com)</small>
-                        </div>
-                        
-                        <hr style="margin: 20px 0; border-top: 2px solid #ddd;">
-                        <h4 style="margin-bottom: 15px; color: #333;">📧 Sender Email Configuration</h4>
-                        
-                        <div class="form-group">
-                            <label for="sender_email">Sender Email Address:</label>
-                            <input type="email" id="sender_email" class="form-control" placeholder="your-email@gmail.com" required>
-                            <small class="form-text">The email address that will send the daily reports</small>
-                        </div>
-                        <div class="form-group">
-                            <label for="sender_password">Email Password / App Password:</label>
-                            <input type="password" id="sender_password" class="form-control" placeholder="Enter app password" required>
-                            <small class="form-text">For Gmail, use an App Password (not your regular password). <a href="https://support.google.com/accounts/answer/185833" target="_blank" rel="noopener">Learn how</a></small>
-                        </div>
-                        <div class="form-group">
-                            <label for="smtp_server">SMTP Server:</label>
-                            <input type="text" id="smtp_server" class="form-control" value="smtp.gmail.com" required>
-                            <small class="form-text">SMTP server address (e.g., smtp.gmail.com for Gmail, smtp.office365.com for Outlook)</small>
-                        </div>
-                        <div class="form-group">
-                            <label for="smtp_port">SMTP Port:</label>
-                            <input type="number" id="smtp_port" class="form-control" value="587" required>
-                            <small class="form-text">Usually 587 for TLS or 465 for SSL</small>
-                        </div>
-                        
-                        <hr style="margin: 20px 0; border-top: 2px solid #ddd;">
-                        
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="email_enabled" checked> Enable automatic email sending
-                            </label>
-                            <small class="form-text">Uncheck to disable automatic daily reports</small>
-                        </div>
-                        <button type="submit" class="btn btn-primary">Save Settings</button>
-                        <button type="button" class="btn btn-success" onclick="testEmail()">Test Email</button>
-                        <button type="button" class="btn btn-warning" onclick="testExport()">Test Export PDF</button>
-                        <button type="button" class="btn btn-danger" onclick="testClear()">Test Clear Diary</button>
-                    </form>
-                        </div>
-                </div>
-                <div class="card">
-                    <h3>🎨 Appearance Settings</h3>
-                    <div class="form-group">
-                        <label style="display: flex; align-items: center; cursor: pointer; padding: 15px; background: #f8f9fa; border-radius: 8px; transition: all 0.3s;">
-                            <input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode()" style="width: 50px; height: 25px; margin-right: 15px;">
-                            <div>
-                                <strong style="display: block; font-size: 1.1em;">Dark Mode</strong>
-                                <small style="color: #6c757d;">Enable dark color scheme for reduced eye strain</small>
+                <!-- Email & Reports Section -->
+                <div class="settings-section">
+                    <div class="settings-section-header">📧 Email & Reports</div>
+                    <div class="settings-section-content">
+                        <div class="card">
+                            <h3 onclick="toggleEmailSettings()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                                <span>Email Schedule Configuration</span>
+                                <span id="emailSettingsToggleIcon" style="font-size: 0.8em; transition: transform 0.3s; transform: rotate(-90deg);">▼</span>
+                            </h3>
+                            <div id="emailSettingsContent" class="collapsible-content collapsed">
+                                <form id="settingsForm">
+                                    <div class="form-group">
+                                        <label for="email_time">Daily Report Time:</label>
+                                        <input type="time" id="email_time" class="form-control" required>
+                                        <small class="form-text">Set the time when daily reports should be sent automatically</small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="recipient_email">Recipient Email(s):</label>
+                                        <input type="text" id="recipient_email" class="form-control" placeholder="email1@example.com, email2@example.com" required>
+                                        <small class="form-text">Enter one or more email addresses separated by commas (e.g., john@example.com, jane@example.com)</small>
+                                    </div>
+                                    
+                                    <hr style="margin: 20px 0; border-top: 2px solid #ddd;">
+                                    <h4 style="margin-bottom: 15px; color: #333;">📧 Sender Email Configuration</h4>
+                                    
+                                    <div class="form-group">
+                                        <label for="sender_email">Sender Email Address:</label>
+                                        <input type="email" id="sender_email" class="form-control" placeholder="your-email@gmail.com" required>
+                                        <small class="form-text">The email address that will send the daily reports</small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="sender_password">Email Password / App Password:</label>
+                                        <input type="password" id="sender_password" class="form-control" placeholder="Enter app password" required>
+                                        <small class="form-text">For Gmail, use an App Password (not your regular password). <a href="https://support.google.com/accounts/answer/185833" target="_blank" rel="noopener">Learn how</a></small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="smtp_server">SMTP Server:</label>
+                                        <input type="text" id="smtp_server" class="form-control" value="smtp.gmail.com" required>
+                                        <small class="form-text">SMTP server address (e.g., smtp.gmail.com for Gmail, smtp.office365.com for Outlook)</small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="smtp_port">SMTP Port:</label>
+                                        <input type="number" id="smtp_port" class="form-control" value="587" required>
+                                        <small class="form-text">Usually 587 for TLS or 465 for SSL</small>
+                                    </div>
+                                    
+                                    <hr style="margin: 20px 0; border-top: 2px solid #ddd;">
+                                    
+                                    <div class="form-group">
+                                        <label>
+                                            <input type="checkbox" id="email_enabled" checked> Enable automatic email sending
+                                        </label>
+                                        <small class="form-text">Uncheck to disable automatic daily reports</small>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                                    <button type="button" class="btn btn-success" onclick="testEmail()">Test Email</button>
+                                    <button type="button" class="btn btn-warning" onclick="testExport()">Test Export PDF</button>
+                                    <button type="button" class="btn btn-danger" onclick="testClear()">Test Clear Diary</button>
+                                </form>
                             </div>
-                        </label>
+                        </div>
+                        
+                        <div class="card">
+                            <h3>📄 Reprint Old Reports</h3>
+                            <p style="color: #6c757d; margin-bottom: 15px;">Generate PDF reports for any past date with current data from the database.</p>
+                            <div class="form-group">
+                                <label for="reprint_date">Select Date to Reprint:</label>
+                                <input type="date" id="reprint_date" class="form-control" style="max-width: 300px;">
+                            </div>
+                            <button onclick="reprintReport()" class="btn btn-primary">📄 Generate PDF Report</button>
+                            <div id="reprintStatus" style="margin-top: 15px;"></div>
+                        </div>
+                        
+                        <div class="card">
+                            <h3>📬 Email History</h3>
+                            <div id="emailHistory" class="loading" style="max-height: 400px; overflow-y: auto; overflow-x: hidden;">Loading...</div>
+                            <p style="text-align: center; color: #6c757d; font-size: 0.9em; margin-top: 10px;">
+                                <small>Showing recent emails (scroll for more)</small>
+                            </p>
+                        </div>
                     </div>
                 </div>
-                <div class="card">
-                    <h3>Current Settings</h3>
-                    <div id="currentSettings" class="loading">Loading...</div>
-                </div>
-            </div>
-            <div class="card">
-                <h3>Email History</h3>
-                <div id="emailHistory" class="loading" style="max-height: 400px; overflow-y: auto; overflow-x: hidden;">Loading...</div>
-                <p style="text-align: center; color: #6c757d; font-size: 0.9em; margin-top: 10px;">
-                    <small>Showing recent emails (scroll for more)</small>
-                </p>
-            </div>
-            
-            <div class="card" style="margin-top: 20px;">
-                <h3>📄 Reprint Old Reports</h3>
-                <p style="color: #6c757d; margin-bottom: 15px;">Generate PDF reports for any past date with current data from the database.</p>
                 
-                <div class="form-group">
-                    <label for="reprint_date">Select Date to Reprint:</label>
-                    <input type="date" id="reprint_date" class="form-control" style="max-width: 300px;">
-                </div>
-                
-                <button onclick="reprintReport()" class="btn btn-primary">📄 Generate PDF Report</button>
-                
-                <div id="reprintStatus" style="margin-top: 15px;"></div>
-            </div>
-            
-            <div class="card" style="margin-top: 20px;">
-                <h3>🔐 Change Shift Leader PIN</h3>
-                <p style="color: #6c757d; margin-bottom: 15px;">For security, shift leaders should change their default PIN (1234) immediately.</p>
-                <form id="changePinForm" onsubmit="handleChangePinSubmit(event)">
-                    <div class="form-group">
-                        <label for="change_pin_name">Your Name:</label>
-                        <select id="change_pin_name" class="form-control" required>
-                            <option value="">Select your name...</option>
-                        </select>
+                <!-- Security & Access Section -->
+                <div class="settings-section">
+                    <div class="settings-section-header">🔐 Security & Access</div>
+                    <div class="settings-section-content">
+                        <div class="card">
+                            <h3>Change Shift Leader PIN</h3>
+                            <p style="color: #6c757d; margin-bottom: 15px;">For security, shift leaders should change their default PIN (1234) immediately.</p>
+                            <form id="changePinForm" onsubmit="handleChangePinSubmit(event)">
+                                <div class="form-group">
+                                    <label for="change_pin_name">Your Name:</label>
+                                    <select id="change_pin_name" class="form-control" required>
+                                        <option value="">Select your name...</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="change_pin_old">Current PIN:</label>
+                                    <input type="password" id="change_pin_old" class="form-control" placeholder="Enter current PIN" required maxlength="10">
+                                </div>
+                                <div class="form-group">
+                                    <label for="change_pin_new">New PIN:</label>
+                                    <input type="password" id="change_pin_new" class="form-control" placeholder="Enter new PIN (min 4 digits)" required minlength="4" maxlength="10">
+                                </div>
+                                <div class="form-group">
+                                    <label for="change_pin_confirm">Confirm New PIN:</label>
+                                    <input type="password" id="change_pin_confirm" class="form-control" placeholder="Re-enter new PIN" required maxlength="10">
+                                </div>
+                                <button type="submit" class="btn btn-primary">Change PIN</button>
+                            </form>
+                        </div>
+                        
+                        <div class="card">
+                            <h3>📋 Settings Access Logs</h3>
+                            <p style="color: #6c757d; margin-bottom: 15px;">View recent access attempts and modifications. Log file: <code>logs/settings_access.log</code></p>
+                            <button onclick="loadSettingsAccessLogs()" class="btn btn-primary" style="margin-bottom: 15px;">🔄 Refresh Logs</button>
+                            <div id="settingsAccessLogs" class="loading" style="max-height: 400px; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 0.9em;">
+                                Loading logs...
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="change_pin_old">Current PIN:</label>
-                        <input type="password" id="change_pin_old" class="form-control" placeholder="Enter current PIN" required maxlength="10">
-                    </div>
-                    <div class="form-group">
-                        <label for="change_pin_new">New PIN:</label>
-                        <input type="password" id="change_pin_new" class="form-control" placeholder="Enter new PIN (min 4 digits)" required minlength="4" maxlength="10">
-                    </div>
-                    <div class="form-group">
-                        <label for="change_pin_confirm">Confirm New PIN:</label>
-                        <input type="password" id="change_pin_confirm" class="form-control" placeholder="Re-enter new PIN" required maxlength="10">
-                    </div>
-                    <button type="submit" class="btn btn-primary">Change PIN</button>
-                </form>
-            </div>
-            
-            <div class="card" style="margin-top: 20px;">
-                <h3>📋 Settings Access Logs</h3>
-                <p style="color: #6c757d; margin-bottom: 15px;">View recent access attempts and modifications. Log file: <code>logs/settings_access.log</code></p>
-                <button onclick="loadSettingsAccessLogs()" class="btn btn-primary" style="margin-bottom: 15px;">🔄 Refresh Logs</button>
-                <div id="settingsAccessLogs" class="loading" style="max-height: 400px; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 0.9em;">
-                    Loading logs...
-                </div>
-            </div>
-            
-            <!-- Activity Logs Section -->
-            <div class="card" style="margin-top: 30px;">
-                <h3>📊 User Activity Logs</h3>
-                <p style="color: #6c757d; margin-bottom: 15px;">Track critical actions: deletions, modifications, and additions.</p>
-                
-                <div style="margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-                    <select id="activityLogDays" class="form-control" style="width: auto;">
-                        <option value="1">Last 24 hours</option>
-                        <option value="7" selected>Last 7 days</option>
-                        <option value="30">Last 30 days</option>
-                        <option value="90">Last 90 days</option>
-                    </select>
-                    
-                    <select id="activityLogAction" class="form-control" style="width: auto;">
-                        <option value="">All Actions</option>
-                        <option value="delete">Deletions</option>
-                        <option value="modify">Modifications</option>
-                        <option value="add">Additions</option>
-                    </select>
-                    
-                    <button onclick="loadActivityLogs()" class="btn btn-primary">🔄 Refresh Logs</button>
-                    <button onclick="exportActivityLogs()" class="btn btn-success">📥 Export CSV</button>
                 </div>
                 
-                <div id="activityLogsContainer" class="loading" style="max-height: 500px; overflow-y: auto;">
-                    Loading activity logs...
+                <!-- Appearance Section -->
+                <div class="settings-section">
+                    <div class="settings-section-header">🎨 Appearance</div>
+                    <div class="settings-section-content">
+                        <div class="card">
+                            <h3>Dark Mode</h3>
+                            <div class="form-group">
+                                <label style="display: flex; align-items: center; cursor: pointer; padding: 15px; background: #f8f9fa; border-radius: 8px; transition: all 0.3s;">
+                                    <input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode()" style="width: 50px; height: 25px; margin-right: 15px;">
+                                    <div>
+                                        <strong style="display: block; font-size: 1.1em;">Enable Dark Mode</strong>
+                                        <small style="color: #6c757d;">Enable dark color scheme for reduced eye strain</small>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="card">
+                            <h3>Current Settings Summary</h3>
+                            <div id="currentSettings" class="loading">Loading...</div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            
-            <!-- Database Maintenance Section -->
-            <div class="card card-spaced">
-                <h3>🔧 Database Maintenance</h3>
-                <div style="padding: 15px; background: #f8f9fa; border-radius: 5px; margin-bottom: 15px;">
-                    <h4 style="color: #333; margin-top: 0;">Holiday/Sick Leave Duplicate Checker</h4>
-                    <p style="color: #666; margin: 10px 0;">Check for and remove duplicate holiday or sick leave entries that may have been created by accident.</p>
-                    <button onclick="checkDuplicates()" class="btn btn-primary" style="margin-right: 10px;">🔍 Check for Duplicates</button>
-                    <button onclick="cleanupDuplicates()" class="btn btn-danger">🧹 Clean Up Duplicates</button>
+                
+                <!-- Logs & Activity Section -->
+                <div class="settings-section">
+                    <div class="settings-section-header">📊 Logs & Activity</div>
+                    <div class="settings-section-content">
+                        <div class="card">
+                            <h3>User Activity Logs</h3>
+                            <p style="color: #6c757d; margin-bottom: 15px;">Track critical actions: deletions, modifications, and additions.</p>
+                            <div style="margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                                <select id="activityLogDays" class="form-control" style="width: auto;">
+                                    <option value="1">Last 24 hours</option>
+                                    <option value="7" selected>Last 7 days</option>
+                                    <option value="30">Last 30 days</option>
+                                    <option value="90">Last 90 days</option>
+                                </select>
+                                <select id="activityLogAction" class="form-control" style="width: auto;">
+                                    <option value="">All Actions</option>
+                                    <option value="delete">Deletions</option>
+                                    <option value="modify">Modifications</option>
+                                    <option value="add">Additions</option>
+                                </select>
+                                <button onclick="loadActivityLogs()" class="btn btn-primary">🔄 Refresh Logs</button>
+                                <button onclick="exportActivityLogs()" class="btn btn-success">📥 Export CSV</button>
+                            </div>
+                            <div id="activityLogsContainer" class="loading" style="max-height: 500px; overflow-y: auto;">
+                                Loading activity logs...
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div id="duplicatesResult" style="margin-top: 15px;"></div>
-            </div>
-            
+                
+                <!-- Database & Maintenance Section -->
+                <div class="settings-section">
+                    <div class="settings-section-header">🔧 Database & Maintenance</div>
+                    <div class="settings-section-content">
+                        <div class="card">
+                            <h3>💾 Database Backup</h3>
+                            <p style="color: #666; margin: 10px 0;">Create a manual backup of the database to Google Drive. The system automatically backs up daily at 2 AM, but you can trigger a backup anytime.</p>
+                            <button onclick="triggerDatabaseBackup()" class="btn btn-success" style="margin-right: 10px;">💾 Backup to Google Drive</button>
+                            <div id="backupResult" style="margin-top: 15px;"></div>
+                        </div>
+                        
+                        <div class="card">
+                            <h3>Holiday/Sick Leave Duplicate Checker</h3>
+                            <p style="color: #666; margin: 10px 0;">Check for and remove duplicate holiday or sick leave entries that may have been created by accident.</p>
+                            <button onclick="checkDuplicates()" class="btn btn-primary" style="margin-right: 10px;">🔍 Check for Duplicates</button>
+                            <button onclick="cleanupDuplicates()" class="btn btn-danger">🧹 Clean Up Duplicates</button>
+                            <div id="duplicatesResult" style="margin-top: 15px;"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <!-- End Settings Content -->
         </div>
@@ -3743,6 +3810,41 @@
                             <strong>❌ Error:</strong> Failed to clean up duplicates
                         </div>`;
                     showAlert('Error cleaning up duplicates', 'danger');
+                });
+        }
+        
+        function triggerDatabaseBackup() {
+            const resultDiv = document.getElementById('backupResult');
+            resultDiv.innerHTML = '<p style="text-align: center; padding: 20px; color: #666;">Creating backup to Google Drive... Please wait.</p>';
+            
+            fetch('/api/backup-to-gdrive', {
+                method: 'POST'
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        resultDiv.innerHTML = `
+                            <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 5px;">
+                                <strong>✅ Backup Successful!</strong>
+                                <p style="margin: 10px 0 0 0; white-space: pre-line;">${data.message || 'Database successfully backed up to Google Drive!'}</p>
+                            </div>`;
+                        showAlert('Database backup completed successfully!', 'success');
+                    } else {
+                        resultDiv.innerHTML = `
+                            <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 5px;">
+                                <strong>❌ Backup Failed</strong>
+                                <p style="margin: 10px 0 0 0; white-space: pre-line;">${data.error || 'Failed to backup database'}</p>
+                            </div>`;
+                        showAlert('Database backup failed. Check the error message above.', 'danger');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error triggering backup:', error);
+                    resultDiv.innerHTML = `
+                        <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 5px;">
+                            <strong>❌ Error:</strong> Failed to trigger backup. Please try again.
+                        </div>`;
+                    showAlert('Error triggering backup', 'danger');
                 });
         }
 
@@ -6032,20 +6134,44 @@
                         Total: ${data.length} emails sent
                     </div>` : '';
                 
-                let html = countBadge + '<table class="table" style="margin-bottom: 0;"><thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Date & Time</th><th>Recipient(s)</th><th>Subject</th><th>PDF File</th></tr></thead><tbody>';
+                let html = countBadge + '<table class="table" style="margin-bottom: 0;"><thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;"><tr><th>Date & Time</th><th>Recipient(s)</th><th>Subject</th><th>Status</th><th>PDF File</th></tr></thead><tbody>';
                 data.forEach((log, index) => {
                     const sentDate = new Date(log.sent_date);
                     const dateStr = sentDate.toLocaleDateString();
                     const timeStr = sentDate.toLocaleTimeString();
                     const fileName = log.pdf_path.split('\\').pop().split('/').pop();
                     
-                    // Highlight recent emails (first 5)
-                    const rowStyle = index < 5 ? 'background: #f0f8ff;' : '';
+                    // Determine status display
+                    const status = log.status || 'unknown';
+                    let statusBadge = '';
+                    let statusColor = '#666';
+                    if (status === 'success') {
+                        statusBadge = '<span style="background: #28a745; color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.85em;">✓ Sent</span>';
+                        statusColor = '#28a745';
+                    } else if (status === 'failed') {
+                        statusBadge = '<span style="background: #dc3545; color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.85em;">✗ Failed</span>';
+                        statusColor = '#dc3545';
+                    } else if (status === 'pending') {
+                        statusBadge = '<span style="background: #ffc107; color: #000; padding: 3px 8px; border-radius: 12px; font-size: 0.85em;">⏳ Pending</span>';
+                        statusColor = '#ffc107';
+                    } else {
+                        statusBadge = '<span style="background: #6c757d; color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.85em;">?</span>';
+                    }
+                    
+                    // Highlight recent emails (first 5) and failed emails
+                    let rowStyle = index < 5 ? 'background: #f0f8ff;' : '';
+                    if (status === 'failed') {
+                        rowStyle += 'background: #fff5f5;';
+                    }
+                    
+                    // Error message tooltip
+                    const errorTooltip = log.error_message ? ` title="Error: ${log.error_message.replace(/"/g, '&quot;')}"` : '';
                     
                     html += `<tr style="${rowStyle}">
                         <td style="white-space: nowrap;">${dateStr}<br/><small style="color: #666;">${timeStr}</small></td>
                         <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="${log.recipient}">${log.recipient}</td>
                         <td>${log.subject}</td>
+                        <td${errorTooltip}>${statusBadge}${log.error_message ? '<br/><small style="color: #dc3545; font-size: 0.8em; cursor: help;" title="' + log.error_message.replace(/"/g, '&quot;') + '">' + (log.error_message.length > 50 ? log.error_message.substring(0, 50) + '...' : log.error_message) + '</small>' : ''}</td>
                         <td><small style="font-family: monospace;">${fileName}</small></td>
                     </tr>`;
                 });

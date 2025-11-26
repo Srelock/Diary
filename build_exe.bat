@@ -25,7 +25,7 @@ echo [1/5] Checking PyInstaller...
 python -c "import PyInstaller" >nul 2>&1
 if errorlevel 1 (
     echo PyInstaller not found. Installing...
-    pip install pyinstaller
+    pip install --no-warn-script-location pyinstaller
     if errorlevel 1 (
         echo ERROR: Failed to install PyInstaller
         pause
@@ -48,7 +48,7 @@ if exist "dist" (
 
 echo.
 echo [3/6] Installing/checking dependencies...
-pip install -r docs\requirements.txt
+pip install --no-warn-script-location -r docs\requirements.txt
 if errorlevel 1 (
     echo WARNING: Some dependencies may have failed to install
     echo Continuing anyway...

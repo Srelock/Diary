@@ -1,31 +1,26 @@
 # Google Drive Backup Setup Guide
 
-This guide will help you set up automatic daily backups of your Diary database to Google Drive.
+⚠️ **NOTE: This application now uses OAuth2 instead of Service Account.**
 
-## Overview
+Please use the **[OAuth2 Setup Guide](GOOGLE_DRIVE_SETUP_OAUTH2.md)** instead.
 
-The system automatically backs up your database to Google Drive at 2 AM every day, keeping only the latest copy. If your PC dies, your data is safe in Google Drive.
+The OAuth2 method:
+- ✅ Works with free Google accounts
+- ✅ Uses your personal Google Drive storage
+- ✅ One-time authorization, then automatic forever
+- ✅ Easier to set up
 
 ---
 
-## Setup Steps
+## Quick Redirect
 
-### Step 1: Create Google Cloud Project
+👉 **[Click here for OAuth2 Setup Instructions](GOOGLE_DRIVE_SETUP_OAUTH2.md)**
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Click **Select a Project** at the top, then **New Project**
-3. Enter a project name (e.g., "Diary Backup")
-4. Click **Create**
-5. Wait for the project to be created, then select it
+---
 
-### Step 2: Enable Google Drive API
+## Old Service Account Method (Deprecated)
 
-1. In your Google Cloud Project, go to **APIs & Services** > **Library**
-2. Search for **Google Drive API**
-3. Click on it and press **Enable**
-4. Wait for it to enable (takes a few seconds)
-
-### Step 3: Create Service Account
+The service account method is no longer supported. This file is kept for reference only.
 
 1. Go to **APIs & Services** > **Credentials**
 2. Click **+ CREATE CREDENTIALS** at the top

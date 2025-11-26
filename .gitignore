@@ -31,5 +31,27 @@ reports/
 .DS_Store
 Thumbs.db
 
+# Google Drive OAuth2 credentials (never commit these!)
+credentials.json
+token.pickle
+
 # Deployment package (if you want to include it, remove this line)
 deployment_package/
+
+# Config files (contains sensitive data)
+config.py
+
+# Build artifacts and executables
+dist/
+build/
+*.exe
+*.pkg
+*.spec
+installer_output/
+
+# Build analysis files
+*.toc
+*.html
+warn-*.txt
+PYZ-*.pyz
+base_library.zip

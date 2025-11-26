@@ -423,9 +423,9 @@ This document contains all available API endpoints for the Diary application.
 **Description:** Manually trigger a Google Drive backup of the database. Uploads `diary_latest.db` to the `Diary_Backups` folder in Google Drive, replacing any existing backup.
 
 **Requirements:**
-- `service_account.json` file must be present in project root
+- `credentials.json` file must be present in project root (OAuth2 credentials)
 - Google Drive API must be enabled
-- See `GOOGLE_DRIVE_SETUP.md` for setup instructions
+- See `GOOGLE_DRIVE_SETUP_OAUTH2.md` for setup instructions
 
 **Response (Success):**
 ```json
@@ -439,7 +439,7 @@ This document contains all available API endpoints for the Diary application.
 ```json
 {
   "success": false,
-  "error": "Backup failed. Check console for details.\n\nCommon issues:\n- service_account.json file missing\n- Invalid credentials\n- No internet connection\n- Google Drive API not enabled"
+  "error": "Backup failed. Check console for details.\n\nCommon issues:\n- credentials.json file missing\n- Invalid or expired OAuth2 token\n- No internet connection\n- Google Drive API not enabled\n- Need to re-authorize (delete token.pickle and try again)"
 }
 ```
 
@@ -794,7 +794,8 @@ All endpoints return error responses in the following format:
 - **Logs:** `logs/`
 - **Database:** `instance/diary.db`
 - **Google Drive Backup:** `Diary_Backups/diary_latest.db` (in Google Drive)
-- **Credentials:** `service_account.json` (not committed to git)
+- **Credentials:** `credentials.json` (OAuth2, not committed to git)
+- **Token:** `token.pickle` (auto-created, not committed to git)
 
 ---
 
