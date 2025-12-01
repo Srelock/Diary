@@ -14,30 +14,40 @@ from reportlab.lib import colors
 app = Flask(__name__)
 
 # Connect to the main Diary database using absolute path
-# When running as PyInstaller exe, use executable location, not __file__
-if getattr(sys, 'frozen', False):
-    # Running as compiled .exe - use executable location
-    current_dir = os.path.dirname(sys.executable)
+# Use the same location as main app (AppData for compiled, project dir for dev)
+
+# First, check if running as compiled .exe - use AppData location (same as main app)
+if getattr(sys, 'frozen', False) and sys.platform == 'win32':
+    # Running as compiled .exe - use AppData (same as main app)
+    appdata = os.getenv('LOCALAPPDATA')
+    if not appdata:
+        appdata = os.path.join(os.getenv('USERPROFILE'), 'AppData', 'Local')
+    user_data_dir = os.path.join(appdata, 'DiaryApp')
+    db_path = os.path.join(user_data_dir, 'instance', 'diary.db')
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
 else:
-    # Running as Python script
+    # Running as Python script - check project directory locations
     current_dir = os.path.dirname(os.path.abspath(__file__))
-
-parent_dir = os.path.dirname(current_dir)
-
-# Check if we're in installed location (DiaryApp\DiaryEditor)
-# or development location (project\DiaryEditor)
-if os.path.exists(os.path.join(parent_dir, 'instance', 'diary.db')):
-    # Installed location: DiaryApp\DiaryEditor -> DiaryApp\instance\diary.db
-    db_path = os.path.join(parent_dir, 'instance', 'diary.db')
-else:
-    # Development location: project\DiaryEditor -> project\Diary\instance\diary.db
-    db_path = os.path.join(parent_dir, 'Diary', 'instance', 'diary.db')
-
-# Convert to absolute path for SQLAlchemy
-db_path = os.path.abspath(db_path)
+    parent_dir = os.path.dirname(current_dir)
+    
+    # Check if we're in installed location (DiaryApp\DiaryEditor)
+    # or development location (project\DiaryEditor)
+    if os.path.exists(os.path.join(parent_dir, 'instance', 'diary.db')):
+        # Installed location: DiaryApp\DiaryEditor -> DiaryApp\instance\diary.db
+        db_path = os.path.join(parent_dir, 'instance', 'diary.db')
+    else:
+        # Development location: project\DiaryEditor -> project\Diary\instance\diary.db
+        db_path = os.path.join(parent_dir, 'Diary', 'instance', 'diary.db')
+    
+    # Convert to absolute path for SQLAlchemy
+    db_path = os.path.abspath(db_path)
 
 # Debug output
-print(f"Editor running from: {current_dir}")
+if getattr(sys, 'frozen', False) and sys.platform == 'win32':
+    print(f"Editor running from: {os.path.dirname(sys.executable)}")
+    print(f"User data directory: {user_data_dir}")
+else:
+    print(f"Editor running from: {os.path.dirname(os.path.abspath(__file__))}")
 print(f"Looking for database at: {db_path}")
 if os.path.exists(db_path):
     print(f"✓ Database found!")
@@ -116,8 +126,19 @@ def generate_daily_pdf(occurrences, report_date=None):
     if report_date is None:
         report_date = datetime.now().date()
     
-    # Save to main Diary app's reports folder
-    reports_dir = os.path.join(parent_dir, 'Diary', 'reports', 'PDF')
+    # Save to main Diary app's reports folder (same location as main app)
+    if getattr(sys, 'frozen', False) and sys.platform == 'win32':
+        # Use AppData location (same as main app)
+        appdata = os.getenv('LOCALAPPDATA')
+        if not appdata:
+            appdata = os.path.join(os.getenv('USERPROFILE'), 'AppData', 'Local')
+        user_data_dir = os.path.join(appdata, 'DiaryApp')
+        reports_dir = os.path.join(user_data_dir, 'reports', 'PDF')
+    else:
+        # Use project directory for development
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        reports_dir = os.path.join(parent_dir, 'Diary', 'reports', 'PDF')
     os.makedirs(reports_dir, exist_ok=True)
     
     # Filename uses report date, with time suffix to avoid overwriting

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, make_response
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
@@ -156,6 +156,35 @@ class ActivityLog(db.Model):
     entity_id = db.Column(db.String(100))  # ID of affected entity
     description = db.Column(db.Text, nullable=False)  # Human-readable description
     ip_address = db.Column(db.String(50))
+
+# Maintenance_Backup database connection
+# Always use USER_DATA_DIR (AppData for compiled .exe, project dir for scripts)
+maintenance_db_path = os.path.join(USER_DATA_DIR, 'instance', 'Maintenance_Backup.db')
+os.makedirs(os.path.dirname(maintenance_db_path), exist_ok=True)
+
+# If running as compiled .exe, always use AppData location (no fallback)
+# If running as script and database doesn't exist, try to copy from project directory
+if getattr(sys, 'frozen', False):
+    # Compiled .exe - use AppData location only
+    if os.path.exists(maintenance_db_path):
+        print(Fore.GREEN + f"✓ Maintenance_Backup.db found at: {maintenance_db_path}")
+    else:
+        print(Fore.YELLOW + f"⚠️  Maintenance_Backup.db not found at: {maintenance_db_path}")
+        print(Fore.YELLOW + f"    Will be created when first maintenance entry is saved.")
+else:
+    # Running as script - check if exists, if not try project directory
+    if not os.path.exists(maintenance_db_path):
+        project_db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'Maintenance_Backup.db')
+        if os.path.exists(project_db_path):
+            # Copy from project directory to user data directory
+            import shutil
+            shutil.copy2(project_db_path, maintenance_db_path)
+            print(Fore.YELLOW + f"Copied Maintenance_Backup.db from project directory to: {maintenance_db_path}")
+        else:
+            print(Fore.YELLOW + f"⚠️  Maintenance_Backup.db not found at: {maintenance_db_path}")
+            print(Fore.YELLOW + f"    Will be created when first maintenance entry is saved.")
+    else:
+        print(Fore.GREEN + f"✓ Maintenance_Backup.db found at: {maintenance_db_path}")
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
@@ -1285,6 +1314,181 @@ def favicon():
         return send_file(ico_path, mimetype='image/x-icon')
     return '', 404
 
+@app.route('/doc')
+def doc():
+    """Serve the maintenance diary form"""
+    response = make_response(render_template('doc.html'))
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
+@app.route('/api/maintenance-entries', methods=['GET', 'POST'])
+def maintenance_entries():
+    """Handle GET (list/search) and POST (create) for maintenance entries"""
+    import sqlite3
+    
+    if request.method == 'POST':
+        # Create new entry
+        data = request.json
+        conn = None
+        try:
+            conn = sqlite3.connect(maintenance_db_path)
+            cursor = conn.cursor()
+            
+            # Generate ID if not provided
+            entry_id = data.get('id')
+            if not entry_id:
+                # Get max ID and increment
+                cursor.execute('SELECT MAX(CAST(ID AS INTEGER)) FROM Maintenance_Book_2 WHERE ID GLOB "[0-9]*"')
+                result = cursor.fetchone()
+                max_id = result[0] if result[0] else 0
+                entry_id = str(max_id + 1)
+            
+            cursor.execute("""
+                INSERT INTO Maintenance_Book_2 
+                (ID, Property, DateIn, TimeIn, Employee, "Details of Fault", 
+                 "Maintenance Name", DateDone, TimeDone, "Action taken", 
+                 "Further action details", Department, HW, CW, CH, CompletionDate, ContactDetails)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                entry_id,
+                data.get('property', ''),
+                data.get('dateIn', ''),
+                data.get('timeIn', ''),
+                data.get('employee', ''),
+                data.get('detailsOfFault', ''),
+                data.get('maintenanceName', ''),
+                data.get('dateDone', ''),
+                data.get('timeDone', ''),
+                data.get('actionTaken', ''),
+                data.get('furtherAction', ''),
+                data.get('department', ''),
+                data.get('hw', '0'),
+                data.get('cw', '0'),
+                data.get('ch', '0'),
+                data.get('completionDate', ''),
+                data.get('contactDetails', '')
+            ))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'id': entry_id, 'message': 'Entry saved successfully'})
+        except Exception as e:
+            if conn:
+                conn.close()
+            return jsonify({'success': False, 'error': str(e)}), 400
+    
+    # GET request - list entries
+    entry_id = request.args.get('id')
+    limit = request.args.get('limit', 100, type=int)
+    date_from = request.args.get('dateFrom')
+    date_to = request.args.get('dateTo')
+    conn = None
+    
+    try:
+        conn = sqlite3.connect(maintenance_db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        if entry_id:
+            cursor.execute('SELECT * FROM Maintenance_Book_2 WHERE ID = ?', (entry_id,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                return jsonify(dict(row))
+            return jsonify({'error': 'Entry not found'}), 404
+        else:
+            # Build query with optional date filtering
+            query = 'SELECT * FROM Maintenance_Book_2 WHERE 1=1'
+            params = []
+            
+            if date_from:
+                query += ' AND DateIn >= ?'
+                params.append(date_from)
+            
+            if date_to:
+                query += ' AND DateIn <= ?'
+                params.append(date_to)
+            
+            query += ' ORDER BY DateIn DESC'
+            
+            # If limit is 0 or negative, load all entries (no limit)
+            if limit > 0:
+                query += ' LIMIT ?'
+                params.append(limit)
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            conn.close()
+            return jsonify([dict(row) for row in rows])
+    except Exception as e:
+        if conn:
+            conn.close()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/maintenance-entries/<entry_id>', methods=['PUT', 'DELETE'])
+def maintenance_entry(entry_id):
+    """Handle UPDATE and DELETE for a specific maintenance entry"""
+    import sqlite3
+    
+    if request.method == 'PUT':
+        # Update entry
+        data = request.json
+        conn = None
+        try:
+            conn = sqlite3.connect(maintenance_db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE Maintenance_Book_2 SET
+                Property = ?, DateIn = ?, TimeIn = ?, Employee = ?,
+                "Details of Fault" = ?, "Maintenance Name" = ?, DateDone = ?,
+                TimeDone = ?, "Action taken" = ?, "Further action details" = ?,
+                Department = ?, HW = ?, CW = ?, CH = ?, CompletionDate = ?,
+                ContactDetails = ?
+                WHERE ID = ?
+            """, (
+                data.get('property', ''),
+                data.get('dateIn', ''),
+                data.get('timeIn', ''),
+                data.get('employee', ''),
+                data.get('detailsOfFault', ''),
+                data.get('maintenanceName', ''),
+                data.get('dateDone', ''),
+                data.get('timeDone', ''),
+                data.get('actionTaken', ''),
+                data.get('furtherAction', ''),
+                data.get('department', ''),
+                data.get('hw', '0'),
+                data.get('cw', '0'),
+                data.get('ch', '0'),
+                data.get('completionDate', ''),
+                data.get('contactDetails', ''),
+                entry_id
+            ))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': 'Entry updated successfully'})
+        except Exception as e:
+            if conn:
+                conn.close()
+            return jsonify({'success': False, 'error': str(e)}), 400
+    
+    elif request.method == 'DELETE':
+        # Delete entry
+        conn = None
+        try:
+            conn = sqlite3.connect(maintenance_db_path)
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM Maintenance_Book_2 WHERE ID = ?', (entry_id,))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': 'Entry deleted successfully'})
+        except Exception as e:
+            if conn:
+                conn.close()
+            return jsonify({'success': False, 'error': str(e)}), 400
+
 @app.route('/api/daily-occurrences', methods=['GET', 'POST'])
 def daily_occurrences():
     if request.method == 'POST':
@@ -1319,7 +1523,7 @@ def daily_occurrences():
 
 @app.route('/api/daily-occurrences/<int:occurrence_id>', methods=['DELETE'])
 def delete_daily_occurrence(occurrence_id):
-    occurrence = DailyOccurrence.query.get(occurrence_id)
+    occurrence = db.session.get(DailyOccurrence, occurrence_id)
     if occurrence:
         # Get user name from request
         data = request.get_json() or {}
@@ -1444,7 +1648,7 @@ def staff_rota():
 
 @app.route('/api/staff-rota/<int:rota_id>', methods=['DELETE'])
 def delete_staff_rota(rota_id):
-    rota = StaffRota.query.get(rota_id)
+    rota = db.session.get(StaffRota, rota_id)
     if rota:
         # Get user name from request
         data = request.get_json() or {}
@@ -1618,7 +1822,7 @@ def staff_rota_duplicates():
             # Remove the duplicate entries (keep the first one)
             deleted_count = 0
             for dup in duplicates:
-                rota = StaffRota.query.get(dup['id'])
+                rota = db.session.get(StaffRota, dup['id'])
                 if rota:
                     db.session.delete(rota)
                     deleted_count += 1
@@ -1641,7 +1845,7 @@ def staff_rota_duplicates():
 def staff_schedule(staff_id):
     """Get individual staff member's schedule for a date range"""
     # Get staff member
-    staff = StaffMember.query.get(staff_id)
+    staff = db.session.get(StaffMember, staff_id)
     if not staff:
         return jsonify({'success': False, 'error': 'Staff member not found'}), 404
     
@@ -2059,7 +2263,7 @@ def water_temperature():
 @app.route('/api/water-temperature/<int:temp_id>', methods=['DELETE'])
 def delete_water_temperature(temp_id):
     """Delete a water temperature record"""
-    temp = WaterTemperature.query.get(temp_id)
+    temp = db.session.get(WaterTemperature, temp_id)
     if not temp:
         return jsonify({'success': False, 'error': 'Temperature record not found'}), 404
     
@@ -2070,7 +2274,7 @@ def delete_water_temperature(temp_id):
 @app.route('/api/update-fault-status', methods=['POST'])
 def update_fault_status():
     data = request.json
-    fault = CCTVFault.query.get(data['id'])
+    fault = db.session.get(CCTVFault, data['id'])
     if fault:
         fault.status = data['status']
         if data['status'] == 'closed':
@@ -2082,7 +2286,7 @@ def update_fault_status():
 @app.route('/api/cctv-faults/<int:fault_id>', methods=['PUT'])
 def update_cctv_fault(fault_id):
     """Update an existing CCTV/Intercom fault (only open/in_progress faults can be edited)"""
-    fault = CCTVFault.query.get(fault_id)
+    fault = db.session.get(CCTVFault, fault_id)
     if not fault:
         return jsonify({'success': False, 'error': 'Fault not found'}), 404
     
@@ -2123,7 +2327,7 @@ def update_cctv_fault(fault_id):
 
 @app.route('/api/delete-fault/<int:fault_id>', methods=['DELETE'])
 def delete_fault(fault_id):
-    fault = CCTVFault.query.get(fault_id)
+    fault = db.session.get(CCTVFault, fault_id)
     if fault:
         # Only allow deletion of closed faults
         if fault.status == 'closed':
@@ -2655,7 +2859,7 @@ def staff_members():
 
 @app.route('/api/staff-members/<int:staff_id>', methods=['PUT', 'DELETE'])
 def staff_member(staff_id):
-    staff = StaffMember.query.get(staff_id)
+    staff = db.session.get(StaffMember, staff_id)
     if not staff:
         return jsonify({'success': False, 'error': 'Staff member not found'}), 404
     
@@ -3282,15 +3486,19 @@ if __name__ == '__main__':
         if hasattr(signal, 'SIGBREAK'):  # Windows-specific
             signal.signal(signal.SIGBREAK, handle_shutdown_signal)
     
+    # Get port from environment variable, default to 5000 for production
+    port = int(os.getenv('PORT', 5000))
+    
     # Auto-open browser after server starts
     def open_browser():
         """Wait for server to start, then open default browser"""
         import time
         time.sleep(1.5)  # Give Flask time to start
-        webbrowser.open('http://127.0.0.1:5000')
-        print(Fore.GREEN + "✓ Browser opened automatically")
+        webbrowser.open(f'http://127.0.0.1:{port}')
+        print(Fore.GREEN + f"✓ Browser opened automatically on port {port}")
     
     # Start browser in background thread
     threading.Thread(target=open_browser, daemon=True).start()
     
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    print(Fore.CYAN + f"Starting server on port {port}...")
+    app.run(debug=False, host='0.0.0.0', port=port)

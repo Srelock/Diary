@@ -8,6 +8,15 @@
 #define MyAppVersion Trim(FileRead(VersionFile))
 #expr FileClose(VersionFile)
 
+; Parse version for VersionInfoVersion (needs 4 numbers: major.minor.release.build)
+; version.txt format: YEAR.MONTH.DAY (e.g., 2025.11.25)
+; Convert to: YEAR.MONTH.DAY.0 for VersionInfoVersion
+#define MyAppVersionInfo MyAppVersion + ".0"
+
+; Extract year from version (version format is always YEAR.MONTH.DAY)
+; For copyright, we'll use 2025 (can be updated manually if needed)
+#define MyAppYear "2025"
+
 #define MyAppName "Building Management Diary"
 #define MyAppPublisher "Building Management"
 #define MyAppURL "https://github.com/Srelock/Diary"
@@ -35,6 +44,13 @@ WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
+; Version information embedded in the installer executable
+VersionInfoVersion={#MyAppVersionInfo}
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription={#MyAppName} Setup
+VersionInfoCopyright=© {#MyAppYear} {#MyAppPublisher}
+VersionInfoProductName={#MyAppName}
+VersionInfoProductVersion={#MyAppVersionInfo}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
