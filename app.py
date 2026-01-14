@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_file, make_response
+from flask import Flask, render_template, request, jsonify, send_file, make_response, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
@@ -10,6 +10,8 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import Image as RLImage
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 import json
@@ -18,10 +20,15 @@ import webbrowser
 import threading
 import signal
 import sys
+import socket
+from werkzeug.utils import secure_filename
+import uuid
 from colorama import init, Fore, Back, Style
 
 # Initialize colorama for Windows console colors
 init(autoreset=True)
+
+# Import configuration from config.py
 
 # Import configuration from config.py
 try:
@@ -64,12 +71,31 @@ def get_user_data_dir():
 USER_DATA_DIR = get_user_data_dir()
 print(Fore.CYAN + f"User data directory: {USER_DATA_DIR}")
 
-app = Flask(__name__)
+if getattr(sys, 'frozen', False):
+    # If running as a bundle, templates are in sys._MEIPASS
+    template_folder = os.path.join(sys._MEIPASS, 'templates')
+    app = Flask(__name__, template_folder=template_folder)
+else:
+    app = Flask(__name__)
 # Use user data directory for database
 db_path = os.path.join(USER_DATA_DIR, 'instance', 'diary.db')
 os.makedirs(os.path.dirname(db_path), exist_ok=True)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# File upload configuration
+UPLOAD_FOLDER = os.path.join(USER_DATA_DIR, 'instance', 'uploads')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB per file (safe for 20MP+ photos)
+MAX_IMAGES_PER_ENTRY = 5
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 150 * 1024 * 1024  # 150MB total request size (allows multiple large files)
+
+# Create upload directories
+os.makedirs(os.path.join(UPLOAD_FOLDER, 'occurrences'), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_FOLDER, 'maintenance'), exist_ok=True)
+
 db = SQLAlchemy(app)
 
 # Database Models
@@ -157,6 +183,24 @@ class ActivityLog(db.Model):
     description = db.Column(db.Text, nullable=False)  # Human-readable description
     ip_address = db.Column(db.String(50))
 
+class OccurrenceImage(db.Model):
+    """Images attached to daily occurrences"""
+    id = db.Column(db.Integer, primary_key=True)
+    occurrence_id = db.Column(db.Integer, db.ForeignKey('daily_occurrence.id'), nullable=False)
+    filename = db.Column(db.String(255), nullable=False)
+    filepath = db.Column(db.String(500), nullable=False)
+    upload_timestamp = db.Column(db.DateTime, default=datetime.now)
+    file_size = db.Column(db.Integer)  # in bytes
+    
+class MaintenanceImage(db.Model):
+    """Images attached to maintenance entries"""
+    id = db.Column(db.Integer, primary_key=True)
+    maintenance_id = db.Column(db.String(50), nullable=False)  # Links to Maintenance_Book_2.ID
+    filename = db.Column(db.String(255), nullable=False)
+    filepath = db.Column(db.String(500), nullable=False)
+    upload_timestamp = db.Column(db.DateTime, default=datetime.now)
+    file_size = db.Column(db.Integer)  # in bytes
+
 # Maintenance_Backup database connection
 # Always use USER_DATA_DIR (AppData for compiled .exe, project dir for scripts)
 maintenance_db_path = os.path.join(USER_DATA_DIR, 'instance', 'Maintenance_Backup.db')
@@ -186,6 +230,77 @@ else:
     else:
         print(Fore.GREEN + f"✓ Maintenance_Backup.db found at: {maintenance_db_path}")
 
+# Image upload helper functions
+def allowed_file(filename):
+    """Check if file extension is allowed"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def save_uploaded_image(file, entry_type, entry_id):
+    """
+    Save uploaded image file and return metadata
+    
+    Args:
+        file: FileStorage object from request.files
+        entry_type: 'occurrence' or 'maintenance'
+        entry_id: ID of the entry
+    
+    Returns:
+        dict with filename, filepath, and file_size
+    """
+    if not file or not allowed_file(file.filename):
+        return None
+    
+    # Generate unique filename
+    original_filename = secure_filename(file.filename)
+    file_ext = original_filename.rsplit('.', 1)[1].lower()
+    unique_filename = f"{entry_id}_{uuid.uuid4().hex[:8]}.{file_ext}"
+    
+    # Determine save path
+    subfolder = 'occurrences' if entry_type == 'occurrence' else 'maintenance'
+    
+    # Store path with forward slashes for database consistency (URL safe)
+    relative_path = f"{subfolder}/{unique_filename}"
+    
+    # Use os-specific path for file system operations
+    full_path = os.path.join(app.config['UPLOAD_FOLDER'], subfolder, unique_filename)
+    
+    # Save file
+    file.save(full_path)
+    file_size = os.path.getsize(full_path)
+    
+    return {
+        'filename': original_filename,
+        'filepath': relative_path,
+        'file_size': file_size
+    }
+
+def delete_image_file(filepath):
+    """Delete image file from filesystem"""
+    try:
+        full_path = os.path.join(app.config['UPLOAD_FOLDER'], filepath)
+        if os.path.exists(full_path):
+            os.remove(full_path)
+            return True
+    except Exception as e:
+        print(f"Error deleting image file: {e}")
+    return False
+
+def get_images_for_entry(entry_type, entry_id):
+    """Get all images for a specific entry"""
+    if entry_type == 'occurrence':
+        images = OccurrenceImage.query.filter_by(occurrence_id=entry_id).all()
+    else:
+        images = MaintenanceImage.query.filter_by(maintenance_id=str(entry_id)).all()
+    
+    return [{
+        'id': img.id,
+        'filename': img.filename,
+        'filepath': img.filepath,
+        'url': f'/uploads/{img.filepath.replace("\\", "/")}',
+        'upload_timestamp': img.upload_timestamp.isoformat() if img.upload_timestamp else None,
+        'file_size': img.file_size
+    } for img in images]
+
 # Initialize scheduler
 scheduler = BackgroundScheduler()
 
@@ -204,6 +319,80 @@ def backup_database_to_gdrive_with_context():
     """Wrapper for backup_database_to_gdrive that provides Flask app context"""
     with app.app_context():
         return backup_database_to_gdrive()
+
+def backup_maintenance_database_to_gdrive():
+    """Create backup of maintenance database and upload to Google Drive"""
+    import shutil
+    import tempfile
+    
+    try:
+        # Source database file - use user data directory
+        db_path = os.path.join(USER_DATA_DIR, 'instance', 'Maintenance_Backup.db')
+        
+        if not os.path.exists(db_path):
+            print(Fore.RED + "✗ Maintenance database file not found, skipping Google Drive backup")
+            return False
+        
+        # Get file size for reporting
+        file_size_kb = os.path.getsize(db_path) / 1024
+        print(Fore.CYAN + f"Starting Maintenance database Google Drive backup...")
+        print(Fore.CYAN + f"  Database size: {file_size_kb:.2f} KB")
+        
+        # Create temporary copy (in case upload takes time and db is being used)
+        with tempfile.NamedTemporaryFile(mode='w+b', suffix='.db', delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+            shutil.copy2(db_path, tmp_path)
+        
+        # Upload to Google Drive
+        success = upload_to_google_drive(tmp_path, 'maintenance_latest.db')
+        
+        # Clean up temporary file
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+        
+        return success
+        
+    except Exception as e:
+        print(Fore.RED + f"✗ Error backing up maintenance database to Google Drive: {e}")
+        return False
+
+def backup_maintenance_database_to_gdrive_with_context():
+    """Wrapper for backup_maintenance_database_to_gdrive that provides Flask app context"""
+    with app.app_context():
+        return backup_maintenance_database_to_gdrive()
+
+def backup_all_databases_to_gdrive():
+    """Backup both databases to Google Drive simultaneously"""
+    import threading
+    
+    diary_result = {'success': False}
+    maintenance_result = {'success': False}
+    
+    def backup_diary():
+        diary_result['success'] = backup_database_to_gdrive()
+    
+    def backup_maintenance():
+        maintenance_result['success'] = backup_maintenance_database_to_gdrive()
+    
+    # Run both backups in parallel
+    diary_thread = threading.Thread(target=backup_diary)
+    maintenance_thread = threading.Thread(target=backup_maintenance)
+    
+    diary_thread.start()
+    maintenance_thread.start()
+    
+    # Wait for both to complete
+    diary_thread.join()
+    maintenance_thread.join()
+    
+    return diary_result['success'], maintenance_result['success']
+
+def backup_all_databases_to_gdrive_with_context():
+    """Wrapper for backup_all_databases_to_gdrive that provides Flask app context"""
+    with app.app_context():
+        return backup_all_databases_to_gdrive()
 
 def get_porter_groups():
     """Get porter groups from database"""
@@ -540,13 +729,36 @@ def generate_daily_pdf(occurrences, report_date=None):
         data = [['TIME', 'FLAT', 'BY', 'INCIDENT REPORT']]
         for occurrence in occurrences:
             # Create wrapped paragraph for description
-            description_para = Paragraph(occurrence.description, wrap_style)
+            # cell_content can be a single Flowable or a list of Flowables
+            cell_content = [Paragraph(occurrence.description, wrap_style)]
+            
+            # Fetch and add images
+            images = OccurrenceImage.query.filter_by(occurrence_id=occurrence.id).all()
+            if images:
+                for img in images:
+                    img_path = os.path.join(app.config['UPLOAD_FOLDER'], img.filepath)
+                    if os.path.exists(img_path):
+                        try:
+                            # Add some spacing before image
+                            cell_content.append(Spacer(1, 5))
+                            
+                            # Add image - constrained to column width
+                            # Using 0 for height means it will scale proportionally based on width
+                            pdf_image = RLImage(img_path, width=3.5*inch, height=2.5*inch, kind='proportional')
+                            cell_content.append(pdf_image)
+                            
+                            # Add caption with filename (optional, can be removed if too cluttered)
+                            # caption_style = ParagraphStyle('Caption', parent=styles['Normal'], fontSize=8, textColor=colors.gray)
+                            # cell_content.append(Paragraph(f"Image: {img.filename}", caption_style))
+                            
+                        except Exception as e:
+                            print(f"Warning: Could not add image {img.filename} to PDF: {e}")
             
             data.append([
                 occurrence.time,
                 occurrence.flat_number,
                 occurrence.reported_by,
-                description_para
+                cell_content
             ])
         
         # Create table with proper column widths and text wrapping
@@ -664,6 +876,123 @@ def generate_daily_pdf(occurrences, report_date=None):
     
     doc.build(story)
     return filepath
+
+def generate_maintenance_pdf(entries):
+    """Generate PDF report for selected maintenance entries"""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.platypus import Image as RLImage
+
+    filename = f"maintenance_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    reports_dir = os.path.join(USER_DATA_DIR, 'reports', 'Maintenance')
+    os.makedirs(reports_dir, exist_ok=True)
+    filepath = os.path.join(reports_dir, filename)
+
+    doc = SimpleDocTemplate(filepath, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        spaceAfter=30,
+        alignment=1,
+        textColor=colors.HexColor('#4A7722')
+    )
+    story.append(Paragraph("Maintenance Entries Report", title_style))
+    story.append(Paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y %H:%M')}", styles['Normal']))
+    story.append(Spacer(1, 20))
+
+    label_style = ParagraphStyle('Label', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10)
+    value_style = ParagraphStyle('Value', parent=styles['Normal'], fontSize=10)
+    section_title_style = ParagraphStyle('SectionTitle', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#4A7722'), spaceBefore=10, spaceAfter=5)
+
+    for i, entry in enumerate(entries):
+        # Entry Header
+        story.append(Paragraph(f"Entry ID: {entry.get('ID', 'N/A')} - {entry.get('Property', 'N/A')}", styles['Heading2']))
+        
+        # Details Table
+        details_data = [
+            [Paragraph("<b>Property:</b>", label_style), Paragraph(str(entry.get('Property', 'N/A')), value_style)],
+            [Paragraph("<b>Department:</b>", label_style), Paragraph(str(entry.get('Department', 'N/A')), value_style)],
+            [Paragraph("<b>Employee:</b>", label_style), Paragraph(str(entry.get('Employee', 'N/A')), value_style)],
+            [Paragraph("<b>Date In:</b>", label_style), Paragraph(str(entry.get('DateIn', 'N/A')), value_style)],
+            [Paragraph("<b>Time In:</b>", label_style), Paragraph(str(entry.get('TimeIn', 'N/A')), value_style)],
+        ]
+        
+        details_table = Table(details_data, colWidths=[1.5*inch, 5*inch])
+        details_table.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LINEBELOW', (0,0), (-1,-2), 0.5, colors.grey),
+        ]))
+        story.append(details_table)
+        
+        # Fault Details
+        story.append(Paragraph("Details of Fault", section_title_style))
+        story.append(Paragraph(str(entry.get('Details of Fault', 'N/A')).replace('\n', '<br/>'), value_style))
+        
+        # Action Taken
+        story.append(Paragraph("Action Taken", section_title_style))
+        story.append(Paragraph(str(entry.get('Action taken', 'N/A')).replace('\n', '<br/>'), value_style))
+        
+        # Completion Info
+        if entry.get('Maintenance Name') or entry.get('DateDone'):
+            story.append(Paragraph("Maintenance Completion", section_title_style))
+            comp_data = [
+                [Paragraph("<b>Maintenance Name:</b>", label_style), Paragraph(str(entry.get('Maintenance Name', 'N/A')), value_style)],
+                [Paragraph("<b>Date Done:</b>", label_style), Paragraph(str(entry.get('DateDone', 'N/A')), value_style)],
+                [Paragraph("<b>Time Done:</b>", label_style), Paragraph(str(entry.get('TimeDone', 'N/A')), value_style)],
+            ]
+            comp_table = Table(comp_data, colWidths=[1.5*inch, 5*inch])
+            comp_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+            story.append(comp_table)
+        
+        # Images
+        images_to_show = entry.get('images', [])
+        if not images_to_show:
+            # Fallback check if images weren't passed
+            images_objs = MaintenanceImage.query.filter_by(maintenance_id=str(entry['ID'])).all()
+            images_to_show = [{'filepath': img.filepath} for img in images_objs]
+
+        if images_to_show:
+            story.append(Paragraph(f"Attached Images ({len(images_to_show)})", section_title_style))
+            img_row = []
+            for img in images_to_show:
+                img_path = os.path.join(app.config['UPLOAD_FOLDER'], img['filepath'])
+                if os.path.exists(img_path):
+                    try:
+                        pdf_img = RLImage(img_path, width=3*inch, height=2.2*inch, kind='proportional')
+                        img_row.append(pdf_img)
+                        # Two images per row
+                        if len(img_row) == 2:
+                            img_table = Table([img_row], colWidths=[3.2*inch, 3.2*inch])
+                            story.append(img_table)
+                            story.append(Spacer(1, 10))
+                            img_row = []
+                    except Exception as e:
+                        print(f"Error adding image to maintenance PDF: {e}")
+            
+            if img_row:
+                img_table = Table([img_row + ['']], colWidths=[3.2*inch, 3.2*inch])
+                story.append(img_table)
+
+        # Separator
+        if i < len(entries) - 1:
+            story.append(Spacer(1, 20))
+            story.append(Table([['']], colWidths=[6.5*inch], style=[('LINEABOVE', (0,0), (-1,0), 2, colors.HexColor('#4A7722'))]))
+            story.append(Spacer(1, 20))
+
+    try:
+        doc.build(story)
+        return filepath
+    except Exception as e:
+        print(f"Error building maintenance PDF: {e}")
+        raise e
 
 def generate_daily_csv(occurrences, report_date=None):
     """Generate CSV backup of daily occurrences"""
@@ -1309,7 +1638,15 @@ def index():
 @app.route('/favicon.ico')
 def favicon():
     """Serve the favicon"""
-    ico_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'diary.ico')
+    # Handle both development and compiled (PyInstaller) modes
+    if getattr(sys, 'frozen', False):
+        # Running as compiled .exe - use PyInstaller's resource path
+        base_path = sys._MEIPASS
+    else:
+        # Running as Python script - use project directory
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    ico_path = os.path.join(base_path, 'diary.ico')
     if os.path.exists(ico_path):
         return send_file(ico_path, mimetype='image/x-icon')
     return '', 404
@@ -1395,7 +1732,16 @@ def maintenance_entries():
             row = cursor.fetchone()
             conn.close()
             if row:
-                return jsonify(dict(row))
+                entry_data = dict(row)
+                images = MaintenanceImage.query.filter_by(maintenance_id=str(entry_id)).all()
+                entry_data['images'] = [{
+                    'id': img.id,
+                    'filename': img.filename,
+                    'url': f'/uploads/{img.filepath.replace("\\", "/")}',
+                    'file_size': img.file_size
+                } for img in images]
+                entry_data['image_count'] = len(images)
+                return jsonify(entry_data)
             return jsonify({'error': 'Entry not found'}), 404
         else:
             # Build query with optional date filtering
@@ -1420,7 +1766,22 @@ def maintenance_entries():
             cursor.execute(query, params)
             rows = cursor.fetchall()
             conn.close()
-            return jsonify([dict(row) for row in rows])
+            
+            # Enrich with images
+            results = []
+            for row in rows:
+                entry_data = dict(row)
+                images = MaintenanceImage.query.filter_by(maintenance_id=str(entry_data['ID'])).all()
+                entry_data['images'] = [{
+                    'id': img.id,
+                    'filename': img.filename,
+                    'url': f'/uploads/{img.filepath.replace("\\", "/")}',
+                    'file_size': img.file_size
+                } for img in images]
+                entry_data['image_count'] = len(images)
+                results.append(entry_data)
+                
+            return jsonify(results)
     except Exception as e:
         if conn:
             conn.close()
@@ -1512,14 +1873,29 @@ def daily_occurrences():
         DailyOccurrence.timestamp < tomorrow
     ).order_by(DailyOccurrence.timestamp.desc()).all()
     
-    return jsonify([{
-        'id': o.id,
-        'time': o.time,
-        'flat_number': o.flat_number,
-        'reported_by': o.reported_by,
-        'description': o.description,
-        'timestamp': o.timestamp.isoformat()
-    } for o in occurrences])
+    results = []
+    for o in occurrences:
+        # Fetch associated images
+        images = OccurrenceImage.query.filter_by(occurrence_id=o.id).all()
+        image_list = [{
+            'id': img.id,
+            'filename': img.filename,
+            'url': f'/uploads/{img.filepath.replace("\\", "/")}',
+            'file_size': img.file_size
+        } for img in images]
+        
+        results.append({
+            'id': o.id,
+            'time': o.time,
+            'flat_number': o.flat_number,
+            'reported_by': o.reported_by,
+            'description': o.description,
+            'timestamp': o.timestamp.isoformat(),
+            'images': image_list,
+            'image_count': len(image_list)
+        })
+    
+    return jsonify(results)
 
 @app.route('/api/daily-occurrences/<int:occurrence_id>', methods=['DELETE'])
 def delete_daily_occurrence(occurrence_id):
@@ -1533,10 +1909,243 @@ def delete_daily_occurrence(occurrence_id):
         description = f"Deleted occurrence: {occurrence.time} - Flat {occurrence.flat_number} - {occurrence.description[:50]}..."
         log_activity(user_name, 'delete', 'occurrence', description, occurrence_id, request.remote_addr)
         
+        # Delete associated images
+        images = OccurrenceImage.query.filter_by(occurrence_id=occurrence_id).all()
+        for img in images:
+            delete_image_file(img.filepath)
+            db.session.delete(img)
+        
         db.session.delete(occurrence)
         db.session.commit()
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Occurrence not found'}), 404
+
+# Image upload endpoints
+@app.route('/api/upload-occurrence-image', methods=['POST'])
+def upload_occurrence_image():
+    """Upload image for a daily occurrence"""
+    try:
+        if 'image' not in request.files:
+            return jsonify({'success': False, 'error': 'No image file provided'}), 400
+        
+        file = request.files['image']
+        occurrence_id = request.form.get('occurrence_id')
+        
+        if not occurrence_id:
+            return jsonify({'success': False, 'error': 'No occurrence ID provided'}), 400
+        
+        # Check if occurrence exists
+        occurrence = db.session.get(DailyOccurrence, int(occurrence_id))
+        if not occurrence:
+            return jsonify({'success': False, 'error': 'Occurrence not found'}), 404
+        
+        # Check image limit
+        existing_count = OccurrenceImage.query.filter_by(occurrence_id=occurrence_id).count()
+        if existing_count >= MAX_IMAGES_PER_ENTRY:
+            return jsonify({'success': False, 'error': f'Maximum {MAX_IMAGES_PER_ENTRY} images per entry'}), 400
+        
+        # Check file size
+        file.seek(0, 2)  # Seek to end
+        file_size = file.tell()
+        file.seek(0)  # Reset to beginning
+        
+        if file_size > MAX_FILE_SIZE:
+            return jsonify({'success': False, 'error': 'File size exceeds 10MB limit'}), 400
+        
+        # Save image
+        image_data = save_uploaded_image(file, 'occurrence', occurrence_id)
+        if not image_data:
+            return jsonify({'success': False, 'error': 'Invalid file type'}), 400
+        
+        # Create database record
+        image_record = OccurrenceImage(
+            occurrence_id=occurrence_id,
+            filename=image_data['filename'],
+            filepath=image_data['filepath'],
+            file_size=image_data['file_size']
+        )
+        db.session.add(image_record)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'image': {
+                'id': image_record.id,
+                'filename': image_record.filename,
+                'url': f'/uploads/{image_record.filepath}',
+                'file_size': image_record.file_size
+            }
+        })
+    
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/upload-maintenance-image', methods=['POST'])
+def upload_maintenance_image():
+    """Upload image for a maintenance entry"""
+    try:
+        if 'image' not in request.files:
+            return jsonify({'success': False, 'error': 'No image file provided'}), 400
+        
+        file = request.files['image']
+        maintenance_id = request.form.get('maintenance_id')
+        
+        if not maintenance_id:
+            return jsonify({'success': False, 'error': 'No maintenance ID provided'}), 400
+        
+        # Check image limit
+        existing_count = MaintenanceImage.query.filter_by(maintenance_id=maintenance_id).count()
+        if existing_count >= MAX_IMAGES_PER_ENTRY:
+            return jsonify({'success': False, 'error': f'Maximum {MAX_IMAGES_PER_ENTRY} images per entry'}), 400
+        
+        # Check file size
+        file.seek(0, 2)
+        file_size = file.tell()
+        file.seek(0)
+        
+        if file_size > MAX_FILE_SIZE:
+            return jsonify({'success': False, 'error': 'File size exceeds 10MB limit'}), 400
+        
+        # Save image
+        image_data = save_uploaded_image(file, 'maintenance', maintenance_id)
+        if not image_data:
+            return jsonify({'success': False, 'error': 'Invalid file type'}), 400
+        
+        # Create database record
+        image_record = MaintenanceImage(
+            maintenance_id=maintenance_id,
+            filename=image_data['filename'],
+            filepath=image_data['filepath'],
+            file_size=image_data['file_size']
+        )
+        db.session.add(image_record)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'image': {
+                'id': image_record.id,
+                'filename': image_record.filename,
+                'url': f'/uploads/{image_record.filepath.replace("\\", "/")}',
+                'file_size': image_record.file_size
+            }
+        })
+    
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/occurrence-images/<int:occurrence_id>', methods=['GET'])
+def get_occurrence_images(occurrence_id):
+    """Get all images for an occurrence"""
+    try:
+        images = get_images_for_entry('occurrence', occurrence_id)
+        return jsonify({'success': True, 'images': images})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/maintenance-images/<maintenance_id>', methods=['GET'])
+def get_maintenance_images(maintenance_id):
+    """Get all images for a maintenance entry"""
+    try:
+        images = get_images_for_entry('maintenance', maintenance_id)
+        return jsonify({'success': True, 'images': images})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/image/<int:image_id>', methods=['DELETE'])
+def delete_image(image_id):
+    """Delete an image"""
+    try:
+        image_type = request.args.get('type', 'occurrence')
+        
+        if image_type == 'occurrence':
+            image = db.session.get(OccurrenceImage, image_id)
+        else:
+            image = db.session.get(MaintenanceImage, image_id)
+        
+        if not image:
+            return jsonify({'success': False, 'error': 'Image not found'}), 404
+        
+        # Delete file from filesystem
+        delete_image_file(image.filepath)
+        
+        # Delete database record
+        db.session.delete(image)
+        db.session.commit()
+        
+        return jsonify({'success': True})
+    
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/uploads/<path:filename>')
+def serve_upload(filename):
+    """Serve uploaded images"""
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/api/maintenance-pdf', methods=['POST'])
+def generate_maintenance_pdf_route():
+    """Endpoint to generate PDF for selected maintenance entries"""
+    data = request.json
+    entry_ids = data.get('ids', [])
+    
+    if not entry_ids:
+        return jsonify({'success': False, 'error': 'No entries selected'}), 400
+    
+    import sqlite3
+    try:
+        conn = sqlite3.connect(maintenance_db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Build query for the selected IDs
+        placeholders = ', '.join(['?'] * len(entry_ids))
+        query = f'SELECT * FROM Maintenance_Book_2 WHERE ID IN ({placeholders}) ORDER BY DateIn DESC'
+        cursor.execute(query, entry_ids)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        if not rows:
+            return jsonify({'success': False, 'error': 'Entries not found'}), 404
+            
+        entries = []
+        for row in rows:
+            entry_data = dict(row)
+            # Fetch images
+            images = MaintenanceImage.query.filter_by(maintenance_id=str(entry_data['ID'])).all()
+            entry_data['images'] = [{'filepath': img.filepath} for img in images]
+            entries.append(entry_data)
+            
+        pdf_path = generate_maintenance_pdf(entries)
+        return send_file(pdf_path, as_attachment=True, download_name=os.path.basename(pdf_path))
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/generate-daily-pdf', methods=['GET'])
+def generate_daily_pdf_route():
+    """Manually trigger daily PDF generation for a specific date"""
+    date_str = request.args.get('date')
+    if date_str:
+        try:
+            report_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid date format (YYYY-MM-DD)'}), 400
+    else:
+        report_date = datetime.now().date()
+        
+    # Get occurrences for the date
+    next_day = report_date + timedelta(days=1)
+    occurrences = DailyOccurrence.query.filter(
+        DailyOccurrence.timestamp >= report_date,
+        DailyOccurrence.timestamp < next_day
+    ).all()
+    
+    try:
+        pdf_path = generate_daily_pdf(occurrences, report_date)
+        return send_file(pdf_path, as_attachment=True, download_name=os.path.basename(pdf_path))
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/staff-rota', methods=['GET', 'POST'])
 def staff_rota():
@@ -2538,20 +3147,31 @@ def test_clear():
 
 @app.route('/api/backup-to-gdrive', methods=['POST'])
 def manual_backup_to_gdrive():
-    """Manually trigger a Google Drive backup"""
+    """Manually trigger a Google Drive backup for both databases"""
     try:
         print(Fore.CYAN + Style.BRIGHT + "\n" + "=" * 50)
         print(Fore.CYAN + Style.BRIGHT + "MANUAL GOOGLE DRIVE BACKUP")
         print(Fore.CYAN + Style.BRIGHT + "=" * 50)
         
-        success = backup_database_to_gdrive()
+        # Backup both databases simultaneously
+        diary_success, maintenance_success = backup_all_databases_to_gdrive()
         
         print(Fore.CYAN + Style.BRIGHT + "=" * 50 + "\n")
         
-        if success:
+        if diary_success and maintenance_success:
             return jsonify({
                 'success': True,
-                'message': 'Database successfully backed up to Google Drive!\n\nFile: diary_latest.db\nFolder: Diary_Backups\n\nOnly the latest backup is kept in Google Drive.'
+                'message': 'Both databases successfully backed up to Google Drive!\n\nFiles:\n- diary_latest.db\n- maintenance_latest.db\n\nFolder: Diary_Backups\n\nOnly the latest backups are kept in Google Drive.'
+            })
+        elif diary_success:
+            return jsonify({
+                'success': True,
+                'message': 'Diary database backed up successfully!\n\nMaintenance database backup failed. Check console for details.\n\nFile: diary_latest.db\nFolder: Diary_Backups'
+            })
+        elif maintenance_success:
+            return jsonify({
+                'success': True,
+                'message': 'Maintenance database backed up successfully!\n\nDiary database backup failed. Check console for details.\n\nFile: maintenance_latest.db\nFolder: Diary_Backups'
             })
         else:
             return jsonify({
@@ -3273,6 +3893,43 @@ def check_missed_reports():
     except Exception as e:
         print(Fore.RED + f"Error checking for missed reports: {e}")
 
+def check_missed_backups():
+    """Check if today's backup time has passed and run backups if missed"""
+    try:
+        now = datetime.now()
+        # Scheduled backup time (both run at the same time)
+        backup_time = now.replace(hour=0, minute=5, second=0, microsecond=0)
+        
+        # Check if backup time has passed today
+        time_since_backup = now - backup_time
+        
+        # Run backups if:
+        # 1. Backup time has passed (positive timedelta)
+        # 2. We're within 3 hours of the scheduled time (to avoid running multiple times)
+        # 3. It's still the same day (not checking yesterday's backups)
+        
+        if timedelta(minutes=0) < time_since_backup < timedelta(hours=3):
+            print(Fore.YELLOW + Style.BRIGHT + "⚠️ Today's backup time has passed, running backups now...")
+            print(Fore.CYAN + f"   Scheduled backup time: {backup_time.strftime('%H:%M')}")
+            print(Fore.CYAN + f"   Current time: {now.strftime('%H:%M')}")
+            
+            # Run both backups simultaneously
+            diary_success, maintenance_success = backup_all_databases_to_gdrive()
+            
+            if diary_success and maintenance_success:
+                print(Fore.GREEN + "✓ Both backups completed successfully!")
+            elif diary_success or maintenance_success:
+                print(Fore.YELLOW + "⚠️ Some backups completed, but others failed. Check console for details.")
+            else:
+                print(Fore.RED + "✗ Backup attempts failed. Check console for details.")
+        else:
+            print(Fore.GREEN + "✓ Backup check completed - backups scheduled for later today or already completed")
+        
+    except Exception as e:
+        print(Fore.RED + f"Error checking for missed backups: {e}")
+        import traceback
+        traceback.print_exc()
+
 def update_scheduler():
     """Update the scheduler with new time settings"""
     try:
@@ -3422,6 +4079,13 @@ if __name__ == '__main__':
         check_missed_reports()
         print(Fore.CYAN + Style.BRIGHT + "=" * 50)
         
+        # Check for missed backups on startup
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
+        print(Fore.CYAN + Style.BRIGHT + "CHECKING FOR MISSED BACKUPS...")
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
+        check_missed_backups()
+        print(Fore.CYAN + Style.BRIGHT + "=" * 50)
+        
         # Clean up old leave data (older than 2 years)
         print(Fore.CYAN + Style.BRIGHT + "=" * 50)
         print(Fore.CYAN + Style.BRIGHT + "CLEANING UP OLD LEAVE DATA...")
@@ -3451,14 +4115,16 @@ if __name__ == '__main__':
             misfire_grace_time=7200  # Allow job to run up to 2 hours late
         )
         
-        # Schedule daily Google Drive backup (runs at 12:05 AM after daily report)
+        # Schedule daily Google Drive backups for both databases (runs at 12:05 AM after daily report)
         scheduler.add_job(
-            func=backup_database_to_gdrive_with_context,
+            func=backup_all_databases_to_gdrive_with_context,
             trigger="cron",
             hour=0,
             minute=5,
             id='daily_gdrive_backup',
-            misfire_grace_time=7200  # Allow job to run up to 2 hours late
+            misfire_grace_time=7200,  # Allow job to run up to 2 hours late
+            coalesce=True,  # Combine multiple missed runs into one
+            max_instances=1  # Only one instance can run at a time
         )
         
         scheduler.start()
@@ -3489,6 +4155,22 @@ if __name__ == '__main__':
     # Get port from environment variable, default to 5000 for production
     port = int(os.getenv('PORT', 5000))
     
+    # Get computer hostname and IP for network access
+    hostname = socket.gethostname()
+    
+    def get_local_ip():
+        try:
+            # Create a dummy socket to detect the preferred interface
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            return "127.0.0.1"
+
+    local_ip = get_local_ip()
+    
     # Auto-open browser after server starts
     def open_browser():
         """Wait for server to start, then open default browser"""
@@ -3500,5 +4182,15 @@ if __name__ == '__main__':
     # Start browser in background thread
     threading.Thread(target=open_browser, daemon=True).start()
     
-    print(Fore.CYAN + f"Starting server on port {port}...")
+    print(Fore.CYAN + Style.BRIGHT + f"\n{'='*60}")
+    print(Fore.CYAN + Style.BRIGHT + f"       BUILDING MANAGEMENT DIARY v2026.1.8")
+    print(Fore.CYAN + f"{'-'*60}")
+    print(Fore.CYAN + f"       Lead Developer: Arpad Kelemen")
+    print(Fore.CYAN + f"       Email Support:  kelemen.arpad@gmail.com")
+    print(Fore.CYAN + Style.BRIGHT + f"{'='*60}\n")
+    
+    print(Fore.CYAN + f"Local access:   http://127.0.0.1:{port}")
+    print(Fore.GREEN + Style.BRIGHT + f"Network access: http://{local_ip}:{port}")
+    print(Fore.GREEN + f"Hostname access: http://{hostname}:{port} (or http://{hostname}.local:{port})")
+    print(Fore.YELLOW + f"Devices on the same Wi-Fi should use: http://{local_ip}:{port}\n")
     app.run(debug=False, host='0.0.0.0', port=port)

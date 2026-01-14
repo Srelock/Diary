@@ -11,6 +11,7 @@ a = Analysis(
     datas=[
         ('templates', 'templates'),
         ('config.example.py', '.'),
+        ('diary.ico', '.'),
     ],
     hiddenimports=[
         'flask',
@@ -58,7 +59,6 @@ a = Analysis(
         'click',
         'itsdangerous',
         'blinker',
-        'pytz',
         'tzlocal',
         'six',
     ],

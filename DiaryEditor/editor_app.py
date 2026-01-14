@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
 import sys
+import socket
 import webbrowser
 import threading
 from reportlab.lib.pagesizes import letter
@@ -755,12 +756,16 @@ if __name__ == '__main__':
         # Check if database exists
         db_exists = os.path.exists(db_path)
         
+        # Get computer hostname for network access
+        hostname = socket.gethostname()
+        
         print("\n" + "="*60)
         print("DIARY REPORT EDITOR")
         print("="*60)
         print(f"Database: {db_path}")
         print(f"Database exists: {'✓ Yes' if db_exists else '✗ No - Please check path!'}")
-        print("Editor URL: http://127.0.0.1:5001")
+        print(f"Local access:   http://127.0.0.1:5001")
+        print(f"Network access: http://{hostname}:5001")
         print("="*60)
         
         if not db_exists:
@@ -772,6 +777,7 @@ if __name__ == '__main__':
             print("="*60 + "\n")
         else:
             print("✓ Database connected successfully")
+            print(f"Other PCs on the network can connect using: http://{hostname}:5001")
             print("="*60 + "\n")
     
     # Auto-open browser after server starts
@@ -785,5 +791,5 @@ if __name__ == '__main__':
     # Start browser in background thread
     threading.Thread(target=open_browser, daemon=True).start()
     
-    app.run(debug=False, host='127.0.0.1', port=5001)
+    app.run(debug=False, host='0.0.0.0', port=5001)
 

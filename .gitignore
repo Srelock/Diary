@@ -51,7 +51,7 @@ installer_output/
 
 # Build analysis files
 *.toc
-*.html
+
 warn-*.txt
 PYZ-*.pyz
 base_library.zip

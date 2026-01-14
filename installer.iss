@@ -69,6 +69,7 @@ Source: "diary.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "config.example.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "config.example.py"; DestDir: "{app}"; DestName: "config.py"; Flags: onlyifdoesntexist uninsneveruninstall
 
+
 ; Task scheduler scripts
 Source: "install_tasks.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "uninstall_tasks.bat"; DestDir: "{app}"; Flags: ignoreversion
@@ -83,13 +84,27 @@ Source: "DiaryEditor\README.md"; DestDir: "{app}\DiaryEditor"; Flags: ignorevers
 ; Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
 
 [Dirs]
-; Create necessary directories
+; Create necessary directories in installation folder
 Name: "{app}\instance"; Permissions: users-full
+Name: "{app}\instance\uploads"; Permissions: users-full
+Name: "{app}\instance\uploads\occurrences"; Permissions: users-full
+Name: "{app}\instance\uploads\maintenance"; Permissions: users-full
 Name: "{app}\logs"; Permissions: users-full
 Name: "{app}\reports"; Permissions: users-full
 Name: "{app}\reports\PDF"; Permissions: users-full
 Name: "{app}\reports\CSV"; Permissions: users-full
 Name: "{app}\templates"; Permissions: users-full
+
+; Create directories in user AppData folder (where the app actually stores data)
+Name: "{localappdata}\DiaryApp"; Permissions: users-full
+Name: "{localappdata}\DiaryApp\instance"; Permissions: users-full
+Name: "{localappdata}\DiaryApp\instance\uploads"; Permissions: users-full
+Name: "{localappdata}\DiaryApp\instance\uploads\occurrences"; Permissions: users-full
+Name: "{localappdata}\DiaryApp\instance\uploads\maintenance"; Permissions: users-full
+Name: "{localappdata}\DiaryApp\logs"; Permissions: users-full
+Name: "{localappdata}\DiaryApp\reports"; Permissions: users-full
+Name: "{localappdata}\DiaryApp\reports\PDF"; Permissions: users-full
+Name: "{localappdata}\DiaryApp\reports\CSV"; Permissions: users-full
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\diary.ico"
