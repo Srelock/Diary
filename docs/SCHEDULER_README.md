@@ -81,7 +81,7 @@ Follow the same steps as Method 1, but for the action:
 
 ### Verify App is Running
 
-After restart, verify the app is accessible at: `http://localhost:5000`
+After restart, verify the app is accessible at: `http://localhost:5050`
 
 ## Logging
 
@@ -113,7 +113,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 1. Check `restart_log.txt` for error messages
 2. Verify Python is installed and accessible
 3. Test manually: `python app.py` from the project directory
-4. Check if port 5000 is already in use
+4. Check if port 5050 is already in use
 
 ### Issue: Multiple Instances Running
 **Solution:** The script should stop existing instances first. If issues persist:
@@ -137,6 +137,6 @@ If you move the project to a different location:
 
 - The PowerShell script is more robust and handles edge cases better
 - Both scripts minimize the app window when starting
-- The app will be accessible at `http://localhost:5000` after restart
+- The app will be accessible at `http://localhost:5050` after restart
 - The scripts preserve the existing functionality of `start_diary.bat`
 

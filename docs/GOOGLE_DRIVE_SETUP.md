@@ -206,7 +206,7 @@ If your PC dies and you need to restore:
 You can also trigger a manual backup anytime:
 
 1. Use the web interface (if you add a backup button)
-2. OR make a POST request to: `http://127.0.0.1:5000/api/backup-to-gdrive`
+2. OR make a POST request to: `http://127.0.0.1:5050/api/backup-to-gdrive`
 
 ---
 

@@ -66,7 +66,7 @@ def create_startup_script():
     startup_content = '''@echo off
 echo Starting Building Management Diary...
 echo.
-echo The application will be available at: http://localhost:5000
+echo The application will be available at: http://localhost:5050
 echo Press Ctrl+C to stop the application
 echo.
 python app.py
@@ -122,7 +122,7 @@ A comprehensive diary application for building management with the following fea
 
 ## Usage
 
-1. Open your web browser and go to: http://localhost:5000
+1. Open your web browser and go to: http://localhost:5050
 2. Use the navigation tabs to access different features
 3. The application will automatically send daily reports at 6:00 PM
 4. All data is stored locally in SQLite database
@@ -202,7 +202,7 @@ def main():
     print("Next steps:")
     print("1. Update email settings in config.py")
     print("2. Run: python app.py")
-    print("3. Open browser to: http://localhost:5000")
+    print("3. Open browser to: http://localhost:5050")
     print()
     print("Or simply double-click 'start_diary.bat' to start!")
     print()

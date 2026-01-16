@@ -53,7 +53,7 @@ C:\Users\kelem\Desktop\Project\DiaryEditor\
 ## 🔄 Running Both Apps
 
 You can run both apps at the same time:
-- **Main Diary:** http://127.0.0.1:5000 (Daily operations)
+- **Main Diary:** http://127.0.0.1:5050 (Daily operations)
 - **Report Editor:** http://127.0.0.1:5001 (Historical editing)
 
 ## 📚 Full Documentation

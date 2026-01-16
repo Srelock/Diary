@@ -6,13 +6,13 @@ echo ========================================
 echo   BUILDING MANAGEMENT DIARY
 echo ========================================
 echo.
-echo Starting application server on port 5000...
+echo Starting application server on port 5050...
 echo.
 echo Once started, the application will open in your browser:
-echo Local access:   http://127.0.0.1:5000
+echo Local access:   http://127.0.0.1:5050
 echo.
 echo Other PCs on the network can connect using:
-echo Network access: http://%COMPUTERNAME%:5000
+echo Network access: http://%COMPUTERNAME%:5050
 echo.
 echo Press Ctrl+C to stop the application
 echo ========================================

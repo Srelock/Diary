@@ -84,7 +84,7 @@ All changes are immediately reflected in both the main diary app and the editor.
 4. **Document changes** - If needed, note what was changed and why
 
 ### Running Alongside Main App
-- ✅ **Can run simultaneously** with the main diary app (port 5000)
+- ✅ **Can run simultaneously** with the main diary app (port 5050)
 - ✅ **Shares the same database** - changes sync automatically
 - ✅ **Independent** - Can run without main app running
 
@@ -103,7 +103,7 @@ pip install Flask Flask-SQLAlchemy reportlab
 ```
 
 ### Ports
-- Main Diary App: http://127.0.0.1:5000
+- Main Diary App: http://127.0.0.1:5050
 - Report Editor: http://127.0.0.1:5001
 
 ### Database Models

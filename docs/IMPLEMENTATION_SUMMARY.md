@@ -91,7 +91,7 @@ Please change PINs immediately for security!
 
 ### Step 3: Change Default PINs
 ⚠️ **CRITICAL SECURITY STEP**
-1. Open the web application (http://localhost:5000)
+1. Open the web application (http://localhost:5050)
 2. Go to the **Settings** tab
 3. Scroll to **"🔐 Change Shift Leader PIN"**
 4. Each shift leader should:

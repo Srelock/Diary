@@ -15,7 +15,7 @@ The staff roster system has been updated to be fully editable. You can now easil
 ### 2. **How to Manage Staff**
 
 #### **View Staff**
-1. Open the application in your browser: http://localhost:5000
+1. Open the application in your browser: http://localhost:5050
 2. Navigate to the **Staff Rota** tab
 3. You'll see two boxes showing Shift 1 and Shift 2 staff members
 

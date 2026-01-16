@@ -80,7 +80,7 @@ Built executables:
    dist\diary_app.exe
    ```
    - Browser should open automatically
-   - App should be accessible at http://localhost:5000
+   - App should be accessible at http://localhost:5050
    - Press Ctrl+C to stop
 
 2. Test service mode (no browser):
@@ -88,7 +88,7 @@ Built executables:
    dist\diary_app.exe --no-browser
    ```
    - No browser should open
-   - App still accessible at http://localhost:5000
+   - App still accessible at http://localhost:5050
 
 ### Step 4: Build the Installer
 
@@ -200,7 +200,7 @@ C:\Program Files\DiaryApp\
 After installation, configure email settings:
 
 1. **Option 1: Using Web Interface** (Recommended)
-   - Open app: http://localhost:5000
+   - Open app: http://localhost:5050
    - Navigate to Settings tab
    - Configure email credentials and recipients
 
@@ -277,8 +277,8 @@ The DiaryEditor tool allows you to edit past diary occurrences:
 **Problem**: Database errors
 - **Solution**: Check `C:\Program Files\DiaryApp\instance\diary.db` has write permissions
 
-**Problem**: Port 5000 already in use
-- **Solution**: Stop other applications using port 5000
+**Problem**: Port 5050 already in use
+- **Solution**: Stop other applications using port 5050
 
 ## Uninstallation
 

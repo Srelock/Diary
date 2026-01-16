@@ -173,7 +173,7 @@ When you run your first backup, the app will ask you to authorize:
 2. **Trigger a manual backup:**
    - Option A: Wait for automatic backup at 2:00 AM
    - Option B: Use the web interface (Settings tab → Backup button)
-   - Option C: API call: `POST http://localhost:5000/api/backup-to-gdrive`
+   - Option C: API call: `POST http://localhost:5050/api/backup-to-gdrive`
 
 3. **Browser will open automatically:**
    - Google sign-in page appears

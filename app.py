@@ -4152,20 +4152,33 @@ if __name__ == '__main__':
         if hasattr(signal, 'SIGBREAK'):  # Windows-specific
             signal.signal(signal.SIGBREAK, handle_shutdown_signal)
     
-    # Get port from environment variable, default to 5000 for production
-    port = int(os.getenv('PORT', 5000))
+    # Get port from environment variable, default to 5050 for production
+    # Using 5050 instead of 5000 to avoid conflicts with common dev servers
+    port = int(os.getenv('PORT', 5050))
     
     # Get computer hostname and IP for network access
     hostname = socket.gethostname()
     
     def get_local_ip():
+        """Get local IP address without creating outbound network connections.
+        Uses gethostbyname which queries the local system's network configuration
+        instead of creating sockets, avoiding any potential DHCP/network interference.
+        """
         try:
-            # Create a dummy socket to detect the preferred interface
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
-            s.close()
-            return ip
+            # Method 1: Try to get IP from hostname (safest, no network activity)
+            local_ip = socket.gethostbyname(hostname)
+            # If we got localhost, try alternative method
+            if local_ip.startswith('127.'):
+                # Method 2: Get all IPs and find a non-localhost one
+                try:
+                    host_info = socket.getaddrinfo(hostname, None, socket.AF_INET)
+                    for info in host_info:
+                        ip = info[4][0]
+                        if not ip.startswith('127.'):
+                            return ip
+                except Exception:
+                    pass
+            return local_ip
         except Exception:
             return "127.0.0.1"
 
